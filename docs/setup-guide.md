@@ -41,19 +41,23 @@ ssh-keygen -t ed25519 -f ~/.ssh/vps_deploy_key -C "deploy@vps"
 ssh-copy-id -i ~/.ssh/vps_deploy_key deploy@YOUR_VPS_IP
 ```
 
-### 1.4 Secure SSH Access
+### 1.4 Configure SSH Access
 
 ```bash
-# Edit SSH config
+# Edit SSH config (if you want to customize)
 sudo nano /etc/ssh/sshd_config
 
-# Ensure these settings:
+# Default settings (kept for convenience):
 PubkeyAuthentication yes
-PasswordAuthentication no
-PermitRootLogin no
+PasswordAuthentication yes  # Kept enabled for convenience
+PermitRootLogin yes        # Kept enabled for convenience
 
-# Restart SSH
-sudo systemctl restart sshd
+# For better security (optional):
+# PasswordAuthentication no
+# PermitRootLogin no
+
+# Restart SSH if you made changes
+sudo systemctl restart ssh  # or sshd on some systems
 ```
 
 ## Step 2: Install Docker

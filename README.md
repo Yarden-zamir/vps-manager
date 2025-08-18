@@ -95,12 +95,17 @@ Every service must:
 - ✅ Define CPU/memory limits
 - ✅ Use commit SHA for image tags
 
-## 🔒 Security
+## 🔒 Security Approach
 
-- SSH key authentication only (passwords disabled)
-- Basic firewall rules (SSH + web ports)
-- Each service runs as isolated Docker container
-- Traefik handles HTTPS enforcement
+**This setup prioritizes convenience over maximum security** - perfect for hobby projects!
+
+- Password & root login enabled (for easy access)
+- SSH keys supported (but not required)
+- Basic security through Docker isolation
+- HTTPS automatically configured via Traefik
+- Can be hardened later if needed
+
+See [Security Considerations](docs/security-considerations.md) for details and hardening options.
 
 ## 🛠️ Common Commands
 
@@ -129,12 +134,13 @@ docker logs traefik
 
 ## ⚠️ Limitations
 
-This approach is designed for simplicity, not enterprise scale:
+This approach is designed for **simplicity and convenience**, not enterprise scale:
 
 - No automatic backups
-- No database migrations
+- No database migrations  
 - No blue-green deployments
 - No rollback beyond `git revert`
-- Basic security only
+- **Security is relaxed by default** (password/root login enabled)
+- All Docker ports are publicly exposed
 
-Perfect for hobby projects, prototypes, and small-scale applications!
+Perfect for hobby projects, prototypes, and small-scale applications where ease of use matters more than strict security!

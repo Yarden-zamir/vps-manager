@@ -37,6 +37,10 @@ print_warning() {
     echo -e "${YELLOW}!${NC} $1"
 }
 
+print_info() {
+    echo -e "${BLUE}ℹ${NC} $1"
+}
+
 # Check if running as root
 check_root() {
     if [ "$EUID" -ne 0 ]; then 
@@ -156,10 +160,14 @@ configure_ssh() {
     # Backup original config
     cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
     
-    # Update SSH configuration
+    # Enable public key authentication (in addition to password)
     sed -i 's/#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-    sed -i 's/#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-    sed -i 's/#*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+    
+    # Keep password authentication enabled
+    print_warning "Keeping password authentication enabled (less secure but more convenient)"
+    
+    # Keep root login enabled
+    print_warning "Keeping root login enabled (less secure but more convenient)"
     
     # Create .ssh directory for deploy user
     mkdir -p /home/$DEPLOY_USER/.ssh
@@ -176,7 +184,7 @@ configure_ssh() {
     else
         print_warning "Could not find SSH service to restart. You may need to restart it manually."
     fi
-    print_status "SSH configured for key-only authentication"
+    print_status "SSH configured with public key authentication enabled"
 }
 
 install_docker() {
@@ -345,22 +353,26 @@ EOF
 }
 
 configure_firewall() {
+    print_warning "Firewall configuration is optional for convenience"
+    print_warning "All ports will remain open by default"
+    
     # Check if ufw is installed
     if ! command -v ufw &> /dev/null; then
         apt install -y ufw
     fi
     
-    # Configure firewall rules
-    ufw default deny incoming
-    ufw default allow outgoing
-    ufw allow ssh
-    ufw allow http
-    ufw allow https
-    
-    # Enable firewall
-    echo "y" | ufw enable
-    
-    print_status "Firewall configured"
+    # Show firewall status but don't enable
+    print_status "Firewall installed but NOT enabled (for easier development)"
+    echo ""
+    echo "To enable basic firewall protection later, run:"
+    echo "  sudo ufw default deny incoming"
+    echo "  sudo ufw default allow outgoing"
+    echo "  sudo ufw allow ssh"
+    echo "  sudo ufw allow http"
+    echo "  sudo ufw allow https"
+    echo "  sudo ufw enable"
+    echo ""
+    print_info "See docs/security-considerations.md for more security options"
 }
 
 install_tools() {
