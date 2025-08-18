@@ -1,0 +1,164 @@
+# Traefik Static Configuration
+# https://doc.traefik.io/traefik/
+
+# API and Dashboard
+api:
+  dashboard: true
+  debug: false
+  insecure: false # Set to true for local development only
+
+# Entry Points
+entryPoints:
+  # HTTP entry point - redirects to HTTPS
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entrypoint:
+          to: websecure
+          scheme: https
+          permanent: true
+
+  # HTTPS entry point
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+        domains:
+        - main: "${DOMAIN}"
+          sans:
+          - "*.${DOMAIN}"
+    # Enable HTTP/3 (QUIC)
+    http3: {}
+
+  # Metrics endpoint (optional)
+  metrics:
+    address: ":8082"
+
+# Providers
+providers:
+  # Docker provider
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: public
+    watch: true
+    # Only use containers with proper health check
+    healthcheck: true
+
+  # File provider for additional configurations
+  file:
+    directory: /config
+    watch: true
+
+# Certificate Resolvers
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      # CHANGE THIS: Your email for Let's Encrypt notifications
+      email: admin@example.com
+      storage: /acme.json
+      keyType: EC256
+
+      # HTTP Challenge
+      httpChallenge:
+        entryPoint: web
+
+      # DNS Challenge (optional, for wildcard certs)
+      # dnsChallenge:
+      #   provider: cloudflare
+      #   delayBeforeCheck: 0
+      #   resolvers:
+      #     - "1.1.1.1:53"
+      #     - "8.8.8.8:53"
+
+      # IMPORTANT: Comment out for production!
+      # Let's Encrypt staging server (higher rate limits for testing)
+      caServer: https://acme-staging-v02.api.letsencrypt.org/directory
+
+# Logs
+log:
+  level: INFO # DEBUG, INFO, WARN, ERROR
+  format: json
+  filePath: /logs/traefik.log
+
+# Access Logs
+accessLog:
+  filePath: /logs/access.log
+  format: json
+  filters:
+    statusCodes:
+    - "200-299"
+    - "400-499"
+    - "500-599"
+    retryAttempts: true
+    minDuration: "10ms"
+  fields:
+    defaultMode: keep
+    headers:
+      defaultMode: drop
+      names:
+        User-Agent: keep
+        Authorization: drop
+        Cookie: drop
+
+# Metrics (Prometheus)
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addRoutersLabels: true
+    addServicesLabels: true
+    buckets:
+    - 0.1
+    - 0.3
+    - 1.2
+    - 5.0
+
+# Ping (Health Check)
+ping:
+  entryPoint: web
+
+# Global settings
+global:
+  checkNewVersion: true
+  sendAnonymousUsage: false
+
+# Pilot (Traefik Cloud) - Optional
+# pilot:
+#   token: "your-pilot-token"
+
+# ServersTransport (Backend connections)
+serversTransport:
+  insecureSkipVerify: false
+  maxIdleConnsPerHost: 200
+  forwardingTimeouts:
+    dialTimeout: "30s"
+    responseHeaderTimeout: "30s"
+    idleConnTimeout: "90s"
+
+# Entry point timeouts
+# Adjust based on your needs
+transport:
+  respondingTimeouts:
+    readTimeout: "300s" # Time to read request
+    writeTimeout: "300s" # Time to write response
+    idleTimeout: "180s" # Keep-alive timeout
+
+# TLS Options
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      cipherSuites:
+      - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+      - TLS_AES_128_GCM_SHA256
+      - TLS_AES_256_GCM_SHA384
+      - TLS_CHACHA20_POLY1305_SHA256
+      curvePreferences:
+      - CurveP521
+      - CurveP384
+      sniStrict: true

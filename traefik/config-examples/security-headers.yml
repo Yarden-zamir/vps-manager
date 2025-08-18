@@ -1,0 +1,80 @@
+# Security Headers Middleware Example
+# Place this file in /persistent/traefik/config/
+
+http:
+  middlewares:
+    # Basic security headers
+    security-headers-basic:
+      headers:
+        customResponseHeaders:
+          X-Frame-Options: "DENY"
+          X-Content-Type-Options: "nosniff"
+          X-XSS-Protection: "1; mode=block"
+          Referrer-Policy: "strict-origin-when-cross-origin"
+        sslRedirect: true
+        sslTemporaryRedirect: false
+        sslForceHost: true
+        browserXssFilter: true
+        contentTypeNosniff: true
+        frameDeny: true
+
+    # Strict security headers
+    security-headers-strict:
+      headers:
+        customResponseHeaders:
+          X-Frame-Options: "DENY"
+          X-Content-Type-Options: "nosniff"
+          X-XSS-Protection: "1; mode=block"
+          Referrer-Policy: "no-referrer"
+          Permissions-Policy: "geolocation=(), microphone=(), camera=()"
+          X-Permitted-Cross-Domain-Policies: "none"
+          X-DNS-Prefetch-Control: "off"
+          X-Download-Options: "noopen"
+        contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'; frame-ancestors 'none';"
+        sslRedirect: true
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        browserXssFilter: true
+        contentTypeNosniff: true
+        frameDeny: true
+        customFrameOptionsValue: "SAMEORIGIN"
+
+    # API security headers
+    security-headers-api:
+      headers:
+        customResponseHeaders:
+          X-Content-Type-Options: "nosniff"
+          Cache-Control: "no-store, no-cache, must-revalidate, private"
+          Pragma: "no-cache"
+          X-API-Version: "1.0"
+        accessControlAllowOriginList:
+        - "https://app.example.com"
+        - "https://www.example.com"
+        accessControlAllowMethods:
+        - "GET"
+        - "POST"
+        - "PUT"
+        - "DELETE"
+        - "OPTIONS"
+        accessControlAllowHeaders:
+        - "Content-Type"
+        - "Authorization"
+        - "X-API-Key"
+        accessControlMaxAge: 3600
+        addVaryHeader: true
+
+    # CORS permissive (development only!)
+    cors-permissive:
+      headers:
+        accessControlAllowOriginList:
+        - "*"
+        accessControlAllowMethods:
+        - "*"
+        accessControlAllowHeaders:
+        - "*"
+        accessControlExposeHeaders:
+        - "*"
+        accessControlMaxAge: 3600
+        addVaryHeader: false

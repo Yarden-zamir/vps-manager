@@ -1,0 +1,40 @@
+# Rate Limiting Middleware Example
+# Place this file in /persistent/traefik/config/
+
+http:
+  middlewares:
+    # Global rate limit - 100 requests per second
+    rate-limit-global:
+      rateLimit:
+        average: 100
+        period: 1s
+        burst: 200
+
+    # API rate limit - 10 requests per second per IP
+    rate-limit-api:
+      rateLimit:
+        average: 10
+        period: 1s
+        burst: 20
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    # Strict rate limit - 1 request per minute
+    rate-limit-strict:
+      rateLimit:
+        average: 1
+        period: 1m
+        burst: 1
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    # Rate limit with custom headers
+    rate-limit-custom:
+      rateLimit:
+        average: 50
+        period: 1s
+        burst: 100
+        sourceCriterion:
+          requestHeaderName: "X-API-Key"

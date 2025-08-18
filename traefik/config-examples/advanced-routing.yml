@@ -1,0 +1,169 @@
+# Advanced Routing Configuration Examples
+# Place this file in /persistent/traefik/config/
+
+http:
+  routers:
+    # Redirect www to non-www
+    redirect-www:
+      rule: "Host(`www.example.com`)"
+      entryPoints:
+      - websecure
+      middlewares:
+      - redirect-www-to-non-www
+      service: noop@internal
+      tls:
+        certResolver: letsencrypt
+
+    # Maintenance mode router
+    maintenance:
+      rule: "Host(`example.com`) && Path(`/maintenance`)"
+      entryPoints:
+      - websecure
+      middlewares:
+      - maintenance-page
+      service: maintenance-service
+      priority: 1000 # High priority to override other routes
+      tls:
+        certResolver: letsencrypt
+
+    # API versioning with path prefix
+    api-v1:
+      rule: "Host(`api.example.com`) && PathPrefix(`/v1`)"
+      entryPoints:
+      - websecure
+      middlewares:
+      - strip-api-prefix
+      - rate-limit-api
+      - security-headers-api
+      service: api-v1-service
+      tls:
+        certResolver: letsencrypt
+
+    # Geographic routing
+    geo-us:
+      rule: "Host(`example.com`) && Headers(`CF-IPCountry`, `US`)"
+      entryPoints:
+      - websecure
+      service: us-service
+      tls:
+        certResolver: letsencrypt
+
+    # Time-based routing (business hours)
+    business-hours:
+      rule: "Host(`support.example.com`) && Time(`09:00`, `17:00`)"
+      entryPoints:
+      - websecure
+      service: support-service
+      tls:
+        certResolver: letsencrypt
+
+  middlewares:
+    # Redirect www to non-www
+    redirect-www-to-non-www:
+      redirectRegex:
+        regex: "^https://www\\.(.+)"
+        replacement: "https://${1}"
+        permanent: true
+
+    # Strip API version prefix
+    strip-api-prefix:
+      stripPrefix:
+        prefixes:
+        - "/v1"
+        - "/v2"
+
+    # Maintenance page
+    maintenance-page:
+      errors:
+        status:
+        - "503"
+        service: maintenance-service
+        query: "/maintenance"
+
+    # Request ID injection
+    request-id:
+      plugin:
+        requestid:
+          headerName: "X-Request-ID"
+
+    # Circuit breaker
+    circuit-breaker:
+      circuitBreaker:
+        expression: "ResponseCodeRatio(500, 600, 0, 600) > 0.30 || NetworkErrorRatio() > 0.10"
+
+    # Retry with backoff
+    retry-with-backoff:
+      retry:
+        attempts: 4
+        initialInterval: 100ms
+
+    # Compress responses
+    compress:
+      compress:
+        excludedContentTypes:
+        - text/event-stream
+
+    # Basic auth with users
+    basic-auth:
+      basicAuth:
+        users:
+        - "admin:$2y$10$..." # htpasswd -nb admin password
+        - "user:$2y$10$..."
+        realm: "Restricted Area"
+        headerField: "X-WebAuth-User"
+
+    # IP whitelist for admin
+    admin-whitelist:
+      ipWhiteList:
+        sourceRange:
+        - "127.0.0.1/32"
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
+        ipStrategy:
+          depth: 2 # For proxies/load balancers
+          excludedIPs:
+          - "172.20.0.1/32" # Exclude Docker network gateway
+
+  services:
+    # Maintenance service
+    maintenance-service:
+      loadBalancer:
+        servers:
+        - url: "http://maintenance-container:80"
+
+    # Multi-server load balancing
+    api-v1-service:
+      loadBalancer:
+        servers:
+        - url: "http://api-1:3000"
+        - url: "http://api-2:3000"
+        - url: "http://api-3:3000"
+        sticky:
+          cookie:
+            name: "api_session"
+            secure: true
+            httpOnly: true
+            sameSite: "strict"
+        healthCheck:
+          path: "/health"
+          interval: "10s"
+          timeout: "3s"
+          scheme: "http"
+
+    # Weighted round robin
+    weighted-service:
+      weighted:
+        services:
+        - name: "service-v1"
+          weight: 80
+        - name: "service-v2"
+          weight: 20
+
+    # Mirroring service (shadow traffic)
+    mirrored-service:
+      mirroring:
+        service: "production-service"
+        mirrors:
+        - name: "staging-service"
+          percent: 10 # Mirror 10% of traffic

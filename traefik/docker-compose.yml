@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - public
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Dashboard port - remove in production or add authentication
+    environment:
+      - TRAEFIK_API_DASHBOARD=true
+      - TRAEFIK_API_DEBUG=false
+    volumes:
+      # Time synchronization
+      - /etc/localtime:/etc/localtime:ro
+      # Docker socket for provider
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Static configuration
+      - ./traefik.yml:/traefik.yml:ro
+      # Dynamic configuration
+      - /persistent/traefik/config:/config:ro
+      # SSL certificates
+      - /persistent/traefik/acme.json:/acme.json
+      # Access logs (optional)
+      - /logs/traefik:/logs
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=public"
+      
+      # Dashboard routing (secure this in production!)
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      
+      # Basic auth for dashboard (uncomment and set password)
+      # - "traefik.http.routers.dashboard.middlewares=dashboard-auth"
+      # - "traefik.http.middlewares.dashboard-auth.basicauth.users=admin:$$2y$$10$$..."
+      
+      # IP whitelist for dashboard (uncomment and set IPs)
+      # - "traefik.http.routers.dashboard.middlewares=dashboard-ipwhitelist"
+      # - "traefik.http.middlewares.dashboard-ipwhitelist.ipwhitelist.sourcerange=127.0.0.1/32"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 64M
+
+networks:
+  public:
+    name: public
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
