@@ -313,6 +313,34 @@ docker run -d -p 3000:3000 \
 rsync -av backup/ /persistent/myapp/
 ```
 
+## Bootstrap Script Issues
+
+### SSH Service Not Found
+```
+Error: Failed to restart sshd.service: Unit sshd.service not found
+```
+
+**Solution:**
+The bootstrap script now handles this automatically, but if you encounter this:
+- On Ubuntu/Debian: The service is called `ssh` not `sshd`
+- On RHEL/CentOS: The service is called `sshd`
+- Manual restart: `sudo systemctl restart ssh` (Ubuntu) or `sudo systemctl restart sshd` (RHEL)
+
+### Script Exits Immediately
+If the bootstrap script exits without doing anything:
+
+**Solution:**
+1. Make sure you're running with sudo
+2. If piping through curl, provide required parameters:
+   ```bash
+   curl -sSL ... | sudo bash -s -- --email your@email.com --domain example.com
+   ```
+3. Or download first for interactive mode:
+   ```bash
+   curl -sSL ... -o bootstrap.sh
+   sudo bash bootstrap.sh
+   ```
+
 ## Getting Help
 
 ### Collect Diagnostic Information

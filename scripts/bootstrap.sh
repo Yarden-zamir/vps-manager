@@ -80,13 +80,20 @@ main() {
     echo "This script will set up your VPS for Docker deployments"
     echo ""
     
+    # Display system information
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        echo "System: $NAME $VERSION"
+    fi
+    echo ""
+    
     # Check if we're running through a pipe
     if [ ! -t 0 ]; then
         print_warning "Running in non-interactive mode"
         if [ -z "$TRAEFIK_EMAIL" ] || [ -z "$DOMAIN" ]; then
             print_error "When running non-interactively, you must provide --email and --domain arguments"
             echo ""
-            echo "Usage: curl ... | bash -s -- --email your@email.com --domain example.com"
+            echo "Usage: curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh | sudo bash -s -- --email your@email.com --domain example.com"
             echo "Or run the script directly: ./bootstrap.sh"
             exit 1
         fi
@@ -161,8 +168,14 @@ configure_ssh() {
     chmod 700 /home/$DEPLOY_USER/.ssh
     chmod 600 /home/$DEPLOY_USER/.ssh/authorized_keys
     
-    # Restart SSH
-    systemctl restart sshd
+    # Restart SSH (handle different service names)
+    if systemctl list-unit-files | grep -q "^sshd.service"; then
+        systemctl restart sshd
+    elif systemctl list-unit-files | grep -q "^ssh.service"; then
+        systemctl restart ssh
+    else
+        print_warning "Could not find SSH service to restart. You may need to restart it manually."
+    fi
     print_status "SSH configured for key-only authentication"
 }
 
