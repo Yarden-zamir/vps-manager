@@ -61,8 +61,13 @@ Complete service template including:
    # Set your GitHub username
    export GITHUB_USERNAME="your-username"
    
-   # Run bootstrap
-   curl -sSL https://raw.githubusercontent.com/$GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh | bash
+   # Option 1: Interactive bootstrap
+   curl -sSL https://raw.githubusercontent.com/$GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh -o bootstrap.sh
+   sudo bash bootstrap.sh
+   
+   # Option 2: Non-interactive with parameters
+   curl -sSL https://raw.githubusercontent.com/$GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh | \
+     sudo bash -s -- --email admin@example.com --domain example.com
    ```
 
 2. **Create New Service**:

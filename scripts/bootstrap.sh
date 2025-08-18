@@ -382,6 +382,19 @@ install_tools() {
     print_status "Additional tools installed"
 }
 
+# Check if script is being piped without sudo
+if [ ! -t 0 ] && [ "$EUID" -ne 0 ]; then
+    echo "Error: This script must be run with sudo when piped"
+    echo ""
+    echo "Usage:"
+    echo "  curl -sSL ... | sudo bash -s -- --email your@email.com --domain example.com"
+    echo ""
+    echo "Or download and run interactively:"
+    echo "  curl -sSL ... -o bootstrap.sh"
+    echo "  sudo bash bootstrap.sh"
+    exit 1
+fi
+
 # Run main function
 check_root
 main "$@"

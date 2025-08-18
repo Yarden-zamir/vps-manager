@@ -288,7 +288,13 @@ sudo dpkg-reconfigure -plow unattended-upgrades
 Finally, you can use our bootstrap script to verify and complete the setup:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB/vps-manager/main/scripts/bootstrap.sh | bash
+# Replace YOUR_GITHUB with your GitHub username
+# Option 1: Interactive mode
+curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB/vps-manager/main/scripts/bootstrap.sh -o bootstrap.sh
+sudo bash bootstrap.sh
+
+# Option 2: Non-interactive mode with parameters
+curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB/vps-manager/main/scripts/bootstrap.sh | sudo bash -s -- --email admin@example.com --domain example.com
 ```
 
 ## Verification

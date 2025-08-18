@@ -15,7 +15,12 @@ A lightweight, Docker-based approach to deploying web applications and services 
 1. **Bootstrap your VPS** (one-time setup):
    ```bash
    # Replace YOUR_GITHUB_USERNAME with your actual GitHub username
-   curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh | bash
+   # Option 1: Interactive mode (download and run)
+   curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh -o bootstrap.sh
+   sudo bash bootstrap.sh
+   
+   # Option 2: Non-interactive mode (provide parameters)
+   curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh | sudo bash -s -- --email admin@example.com --domain example.com
    ```
 
 2. **Create a new service**:
