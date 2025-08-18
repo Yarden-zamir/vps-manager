@@ -80,6 +80,18 @@ main() {
     echo "This script will set up your VPS for Docker deployments"
     echo ""
     
+    # Check if we're running through a pipe
+    if [ ! -t 0 ]; then
+        print_warning "Running in non-interactive mode"
+        if [ -z "$TRAEFIK_EMAIL" ] || [ -z "$DOMAIN" ]; then
+            print_error "When running non-interactively, you must provide --email and --domain arguments"
+            echo ""
+            echo "Usage: curl ... | bash -s -- --email your@email.com --domain example.com"
+            echo "Or run the script directly: ./bootstrap.sh"
+            exit 1
+        fi
+    fi
+    
     # Get email if not provided
     if [ -z "$TRAEFIK_EMAIL" ]; then
         read -p "Enter email for Let's Encrypt certificates: " TRAEFIK_EMAIL
