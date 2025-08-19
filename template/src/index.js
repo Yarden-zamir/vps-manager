@@ -9,60 +9,29 @@ const COMMIT_SHA = process.env.COMMIT_SHA || 'unknown';
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health check endpoint (required)
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     app: APP_NAME,
-    version: COMMIT_SHA,
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
+    version: COMMIT_SHA
   });
 });
 
-// Root endpoint
 app.get('/', (req, res) => {
   res.json({
     message: `Welcome to ${APP_NAME}!`,
-    version: COMMIT_SHA,
-    endpoints: {
-      health: '/health',
-      info: '/info'
-    }
+    version: COMMIT_SHA
   });
 });
 
-// Info endpoint
-app.get('/info', (req, res) => {
-  res.json({
-    app: APP_NAME,
-    version: COMMIT_SHA,
-    node: process.version,
-    env: process.env.NODE_ENV || 'development',
-    memory: process.memoryUsage(),
-    uptime: process.uptime()
-  });
-});
-
-// Error handling middleware
+// Error handling
 app.use((err, req, res, next) => {
   console.error('Error:', err);
-  res.status(err.status || 500).json({
-    error: {
-      message: err.message || 'Internal Server Error',
-      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-    }
-  });
+  res.status(500).json({ error: 'Internal Server Error' });
 });
 
-// 404 handler
 app.use((req, res) => {
-  res.status(404).json({
-    error: {
-      message: 'Not Found',
-      path: req.path
-    }
-  });
+  res.status(404).json({ error: 'Not Found' });
 });
 
 // Start server

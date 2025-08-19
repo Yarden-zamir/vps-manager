@@ -13,7 +13,6 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Default values
-DEPLOY_USER="deploy"
 TRAEFIK_EMAIL=""
 DOMAIN=""
 
@@ -37,10 +36,6 @@ print_warning() {
     echo -e "${YELLOW}!${NC} $1"
 }
 
-print_info() {
-    echo -e "${BLUE}ℹ${NC} $1"
-}
-
 # Check if running as root
 check_root() {
     if [ "$EUID" -ne 0 ]; then 
@@ -51,10 +46,6 @@ check_root() {
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --user)
-            DEPLOY_USER="$2"
-            shift 2
-            ;;
         --email)
             TRAEFIK_EMAIL="$2"
             shift 2
@@ -66,9 +57,8 @@ while [[ $# -gt 0 ]]; do
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
-            echo "  --user USER     Deploy user (default: deploy)"
             echo "  --email EMAIL   Email for Let's Encrypt"
-            echo "  --domain DOMAIN Base domain for services"
+            echo "  --domain DOMAIN Base domain for Traefik dashboard (optional)"
             echo "  --help          Show this help message"
             exit 0
             ;;
@@ -94,10 +84,10 @@ main() {
     # Check if we're running through a pipe
     if [ ! -t 0 ]; then
         print_warning "Running in non-interactive mode"
-        if [ -z "$TRAEFIK_EMAIL" ] || [ -z "$DOMAIN" ]; then
-            print_error "When running non-interactively, you must provide --email and --domain arguments"
+        if [ -z "$TRAEFIK_EMAIL" ]; then
+            print_error "When running non-interactively, you must provide --email argument"
             echo ""
-            echo "Usage: curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh | sudo bash -s -- --email your@email.com --domain example.com"
+            echo "Usage: curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh | sudo bash -s -- --email your@email.com"
             echo "Or run the script directly: ./bootstrap.sh"
             exit 1
         fi
@@ -108,23 +98,18 @@ main() {
         read -p "Enter email for Let's Encrypt certificates: " TRAEFIK_EMAIL
     fi
     
-    # Get domain if not provided
-    if [ -z "$DOMAIN" ]; then
-        read -p "Enter base domain (e.g., example.com): " DOMAIN
+    # Domain is optional - only needed if you want Traefik dashboard
+    if [ -z "$DOMAIN" ] && [ -t 0 ]; then
+        read -p "Enter domain for Traefik dashboard (optional, press Enter to skip): " DOMAIN
     fi
     
     print_header "Step 1: System Update"
     apt update && apt upgrade -y
     print_status "System updated"
     
-    print_header "Step 2: Create Deploy User"
-    if id "$DEPLOY_USER" &>/dev/null; then
-        print_warning "User $DEPLOY_USER already exists"
-    else
-        adduser --disabled-password --gecos "" $DEPLOY_USER
-        usermod -aG sudo $DEPLOY_USER
-        print_status "User $DEPLOY_USER created"
-    fi
+    print_header "Step 2: System Configuration"
+    print_status "Using root account for service management"
+    print_status "Service accounts will be created per service with unique passwords"
     
     print_header "Step 3: Configure SSH"
     configure_ssh
@@ -148,43 +133,29 @@ main() {
     echo -e "${GREEN}Your VPS is ready for deployments!${NC}"
     echo ""
     echo "Next steps:"
-    echo "1. Add your SSH key to /home/$DEPLOY_USER/.ssh/authorized_keys"
-    echo "2. Test SSH connection: ssh $DEPLOY_USER@$(curl -s ifconfig.me)"
-    echo "3. Configure DNS for $DOMAIN"
-    echo "4. Deploy your first service!"
+    echo "1. Create your first service with: create-service <name> <domain>"
+    echo "2. Services will get their own user accounts with passwords"
+    if [ -n "$DOMAIN" ]; then
+        echo "3. Configure DNS for $DOMAIN (for Traefik dashboard)"
+    else
+        echo "3. Configure DNS for each service as you deploy them"
+    fi
     echo ""
-    print_warning "Remember to save the deploy user's SSH key for GitHub Actions!"
+    print_status "Root access will be used to manage services"
+    print_warning "Save the generated passwords for each service!"
 }
 
 configure_ssh() {
-    # Backup original config
-    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
-    
-    # Enable public key authentication (in addition to password)
+    # Enable public key authentication
     sed -i 's/#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-    
-    # Keep password authentication enabled
-    print_warning "Keeping password authentication enabled (less secure but more convenient)"
-    
-    # Keep root login enabled
-    print_warning "Keeping root login enabled (less secure but more convenient)"
-    
-    # Create .ssh directory for deploy user
-    mkdir -p /home/$DEPLOY_USER/.ssh
-    touch /home/$DEPLOY_USER/.ssh/authorized_keys
-    chown -R $DEPLOY_USER:$DEPLOY_USER /home/$DEPLOY_USER/.ssh
-    chmod 700 /home/$DEPLOY_USER/.ssh
-    chmod 600 /home/$DEPLOY_USER/.ssh/authorized_keys
     
     # Restart SSH (handle different service names)
     if systemctl list-unit-files | grep -q "^sshd.service"; then
         systemctl restart sshd
     elif systemctl list-unit-files | grep -q "^ssh.service"; then
         systemctl restart ssh
-    else
-        print_warning "Could not find SSH service to restart. You may need to restart it manually."
     fi
-    print_status "SSH configured with public key authentication enabled"
+    print_status "SSH configured"
 }
 
 install_docker() {
@@ -205,9 +176,6 @@ install_docker() {
     # Install Docker
     apt update
     apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-    
-    # Add deploy user to docker group
-    usermod -aG docker $DEPLOY_USER
     
     # Enable Docker on boot
     systemctl enable docker
@@ -233,13 +201,11 @@ create_directories() {
     # Create main directories
     mkdir -p /apps /persistent /logs
     
-    # Set ownership
-    chown -R $DEPLOY_USER:$DEPLOY_USER /apps /persistent /logs
-    
-    # Set permissions
+    # Set permissions (owned by root)
     chmod 755 /apps /persistent /logs
     
-    print_status "Directory structure created"
+    print_status "Directory structure created (root-owned)"
+    print_status "Service directories will be created with service-specific ownership"
 }
 
 install_traefik() {
@@ -329,82 +295,59 @@ log:
 accessLog: {}
 EOF
     
-    # Create .env file
-    cat > .env <<EOF
+    # Create .env file (only if domain provided)
+    if [ -n "$DOMAIN" ]; then
+        cat > .env <<EOF
 DOMAIN=$DOMAIN
 EOF
+    fi
     
     # Create acme.json
     touch /persistent/traefik/acme.json
     chmod 600 /persistent/traefik/acme.json
     
-    # Set ownership
-    chown -R $DEPLOY_USER:$DEPLOY_USER /apps/traefik /persistent/traefik
-    
     # Create public network
     docker network create public 2>/dev/null || true
     
-    # Start Traefik
+    # Start Traefik (as root)
     cd /apps/traefik
-    sudo -u $DEPLOY_USER docker compose up -d
+    docker compose up -d
     
     print_status "Traefik installed and running"
     print_warning "Traefik is using Let's Encrypt staging environment. Update traefik.yml for production certificates."
+    if [ -z "$DOMAIN" ]; then
+        print_status "No domain configured for Traefik dashboard. Each service will use its own domain."
+    else
+        print_status "Traefik dashboard will be available at: https://traefik.$DOMAIN (after DNS setup)"
+    fi
 }
 
 configure_firewall() {
-    print_warning "Firewall configuration is optional for convenience"
-    print_warning "All ports will remain open by default"
-    
-    # Check if ufw is installed
+    # Install but don't enable firewall
     if ! command -v ufw &> /dev/null; then
         apt install -y ufw
     fi
-    
-    # Show firewall status but don't enable
-    print_status "Firewall installed but NOT enabled (for easier development)"
-    echo ""
-    echo "To enable basic firewall protection later, run:"
-    echo "  sudo ufw default deny incoming"
-    echo "  sudo ufw default allow outgoing"
-    echo "  sudo ufw allow ssh"
-    echo "  sudo ufw allow http"
-    echo "  sudo ufw allow https"
-    echo "  sudo ufw enable"
-    echo ""
-    print_info "See docs/security-considerations.md for more security options"
+    print_status "Firewall installed but not enabled (all ports open)"
 }
 
 install_tools() {
-    # Install useful tools
-    apt install -y \
-        htop \
-        curl \
-        wget \
-        git \
-        vim \
-        tmux \
-        net-tools \
-        dnsutils \
-        unattended-upgrades \
-        fail2ban
-    
-    # Configure automatic updates
-    dpkg-reconfigure -plow unattended-upgrades
-    
-    # Basic fail2ban configuration
-    systemctl enable fail2ban
-    systemctl start fail2ban
-    
-    # Install GitHub CLI (optional)
+    # Install essential tools
+    apt install -y curl wget git vim htop jq 
+    print_status "Essential tools installed"
+    curl --proto '=https' --tlsv1.2 -sSF https://sh.rustup.rs | sh
+    print_status "Rust toolchain installed"
+    cargo install erdtree fd-find atuin
+    echo 'eval "$(atuin init bash --disable-up-arrow)"' >> ~/.zshrc
+        # Install GitHub CLI (optional)
     if ! command -v gh &> /dev/null; then
         curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
         apt update
         apt install -y gh
     fi
-    
-    print_status "Additional tools installed"
+    print_status "Additional tools installed and configured: erdtree, fd-find, atuin, gh"
+
+
 }
 
 # Check if script is being piped without sudo
@@ -412,7 +355,7 @@ if [ ! -t 0 ] && [ "$EUID" -ne 0 ]; then
     echo "Error: This script must be run with sudo when piped"
     echo ""
     echo "Usage:"
-    echo "  curl -sSL ... | sudo bash -s -- --email your@email.com --domain example.com"
+    echo "  curl -sSL ... | sudo bash -s -- --email your@email.com [--domain example.com]"
     echo ""
     echo "Or download and run interactively:"
     echo "  curl -sSL ... -o bootstrap.sh"

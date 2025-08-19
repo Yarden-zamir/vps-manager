@@ -19,16 +19,12 @@ This repository provides a complete solution for managing Docker-based deploymen
   - Creates directory structure
   
 - **scripts/create-service.sh** - Service creation helper that:
+  - Creates service-specific Unix user with password
   - Downloads template
   - Customizes for your service
   - Creates GitHub repo (if gh CLI available)
-  - Sets up GitHub secrets
-  - Creates VPS directories
-  
-- **scripts/manage-accounts.py** - Optional service account manager for:
-  - Creating isolated Unix users per service
-  - Managing permissions
-  - Setting up SSH access
+  - Sets up GitHub secrets (including password)
+  - Creates VPS directories with proper ownership
 
 ### 📦 Template
 Complete service template including:
@@ -67,19 +63,22 @@ Complete service template including:
    
    # Option 2: Non-interactive with parameters
    curl -sSL https://raw.githubusercontent.com/$GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh | \
-     sudo bash -s -- --email admin@example.com --domain example.com
+     sudo bash -s -- --email admin@example.com
+   
+   # Note: --domain is optional, only needed for Traefik dashboard access
    ```
 
-2. **Create New Service**:
+2. **Create New Service** (from your local machine):
    ```bash
    # Set required environment variables
    export VPS_MANAGER_REPO="$GITHUB_USERNAME/vps-manager"
    export VPS_HOST="your.vps.ip"
-   export VPS_SSH_KEY_PATH="$HOME/.ssh/vps_deploy_key"
    
-   # Source and run
+   # Source and run (requires root SSH access to VPS)
    source <(curl -sSL https://raw.githubusercontent.com/$GITHUB_USERNAME/vps-manager/main/scripts/create-service.sh)
    create-service myapp myapp.example.com
+   
+   # Save the generated password for deployment!
    ```
 
 3. **Deploy**: Push to main branch → GitHub Action deploys automatically

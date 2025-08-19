@@ -16,13 +16,20 @@ This guide explains how to create and deploy a new service to your VPS.
 ```bash
 # Set environment variables
 export VPS_HOST="your.vps.ip"
-export VPS_USER="deploy"
-export VPS_SSH_KEY_PATH="$HOME/.ssh/vps_deploy_key"
+export VPS_MANAGER_REPO="YOUR_GITHUB/vps-manager"
 
-# Source and run the script
+# Source and run the script (requires root SSH access)
 source <(curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB/vps-manager/main/scripts/create-service.sh)
 create-service myapp myapp.example.com
+
+# IMPORTANT: Save the generated password that will be displayed!
 ```
+
+The script will:
+1. Create a service user (svc-myapp) with a secure password
+2. Set up directories with proper ownership
+3. Configure GitHub repo and secrets
+4. Display credentials for your records
 
 ## Manual Service Creation
 
@@ -90,8 +97,8 @@ git push -u origin main
 ```bash
 # Secrets (sensitive data)
 gh secret set VPS_HOST -b "your.vps.ip"
-gh secret set VPS_USER -b "deploy"
-gh secret set VPS_SSH_KEY < ~/.ssh/vps_deploy_key
+gh secret set VPS_USER -b "svc-myapp"
+gh secret set VPS_PASSWORD -b "generated-password-here"
 
 # Variables (non-sensitive config)
 gh variable set APP_DOMAIN -b "myapp.example.com"
@@ -106,27 +113,41 @@ gh secret set API_KEY -b "your-secret-api-key"
 1. Go to Settings → Secrets and variables → Actions
 2. Add repository secrets:
    - `VPS_HOST`: Your VPS IP or hostname
-   - `VPS_USER`: SSH user (usually `deploy`)
-   - `VPS_SSH_KEY`: Contents of your SSH private key
+   - `VPS_USER`: Service user (e.g., `svc-myapp`)
+   - `VPS_PASSWORD`: Service user password (from creation script)
 3. Add repository variables:
    - `APP_DOMAIN`: Your app's domain
    - `APP_PORT`: Internal port (usually 3000)
 
-### Step 5: Prepare VPS
+### Step 5: Create Service User on VPS
 
-SSH into your VPS and create directories:
+SSH as root and create the service user:
 ```bash
-ssh deploy@your.vps.ip
+ssh root@your.vps.ip
+
+# Create user and set password
+useradd -m -s /bin/bash -d /home/svc-myapp svc-myapp
+passwd svc-myapp  # Set a secure password
+
+# Add to docker group
+usermod -aG docker svc-myapp
+
+# Create directories with proper ownership
 mkdir -p /apps/myapp /persistent/myapp/data /logs/myapp
+chown -R svc-myapp:svc-myapp /apps/myapp /persistent/myapp /logs/myapp
 ```
+
+Note: The create-service script does this automatically!
 
 ### Step 6: Configure DNS
 
-Point your domain to your VPS:
+Each service needs its own domain configured. Point your service's domain to your VPS:
 - Type: A record
 - Name: myapp (or @ for root domain)
 - Value: YOUR_VPS_IP
 - TTL: 300 (5 minutes)
+
+**Note**: There's no global domain configuration. Each service manages its own domain through its docker-compose.yml labels. This allows complete flexibility - you can use different domains, subdomains, or even different domain providers for each service.
 
 ### Step 7: Deploy
 

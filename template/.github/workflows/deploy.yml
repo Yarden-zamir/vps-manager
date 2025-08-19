@@ -19,40 +19,36 @@ jobs:
       env:
         VPS_HOST: ${{ secrets.VPS_HOST }}
         VPS_USER: ${{ secrets.VPS_USER }}
-        VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
         APP_DOMAIN: ${{ vars.APP_DOMAIN }}
         APP_PORT: ${{ vars.APP_PORT }}
       run: |
-        # Setup SSH
+        # Install sshpass for password authentication
+        sudo apt-get update && sudo apt-get install -y sshpass
+        
+        # Add host to known hosts
         mkdir -p ~/.ssh
-        echo "$VPS_SSH_KEY" > ~/.ssh/deploy_key
-        chmod 600 ~/.ssh/deploy_key
         ssh-keyscan -H $VPS_HOST >> ~/.ssh/known_hosts
         
         # Create app directory on VPS
-        ssh -i ~/.ssh/deploy_key $VPS_USER@$VPS_HOST "mkdir -p /apps/$APP_NAME"
+        sshpass -p "$VPS_PASSWORD" ssh $VPS_USER@$VPS_HOST "mkdir -p /apps/$APP_NAME"
         
         # Clear existing files (non-atomic deploy)
-        ssh -i ~/.ssh/deploy_key $VPS_USER@$VPS_HOST "rm -rf /apps/$APP_NAME/*"
+        sshpass -p "$VPS_PASSWORD" ssh $VPS_USER@$VPS_HOST "rm -rf /apps/$APP_NAME/*"
         
         # Copy files to VPS
-        scp -i ~/.ssh/deploy_key -r ./* $VPS_USER@$VPS_HOST:/apps/$APP_NAME/
+        sshpass -p "$VPS_PASSWORD" scp -r ./* $VPS_USER@$VPS_HOST:/apps/$APP_NAME/
         
         # Create .env file with production secrets
-        ssh -i ~/.ssh/deploy_key $VPS_USER@$VPS_HOST << 'ENDSSH'
+        sshpass -p "$VPS_PASSWORD" ssh $VPS_USER@$VPS_HOST << 'ENDSSH'
         cd /apps/$APP_NAME
         
-        # Write environment variables
         cat > .env << EOF
         NODE_ENV=production
         APP_NAME=${{ env.APP_NAME }}
         APP_DOMAIN=${{ vars.APP_DOMAIN }}
         APP_PORT=${{ vars.APP_PORT }}
         COMMIT_SHA=${{ github.sha }}
-        
-        # Add your app-specific secrets here
-        # DATABASE_URL=${{ secrets.DATABASE_URL }}
-        # API_KEY=${{ secrets.API_KEY }}
         EOF
         
         # Build and deploy
@@ -77,16 +73,5 @@ jobs:
         # Cleanup old images
         docker image prune -f --filter "until=24h"
         ENDSSH
-        
-        # Cleanup SSH key
-        rm ~/.ssh/deploy_key
 
-    - name: Notify deployment status
-      if: always()
-      run: |
-        if [ "${{ job.status }}" == "success" ]; then
-          echo "✅ Deployment successful!"
-          echo "🌐 Application available at: https://${{ vars.APP_DOMAIN }}"
-        else
-          echo "❌ Deployment failed!"
-        fi
+

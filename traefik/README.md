@@ -4,14 +4,16 @@ This directory contains the Traefik reverse proxy configuration for the VPS.
 
 ## Setup
 
-1. **Copy environment file**:
+1. **Copy environment file** (optional):
    ```bash
    cp env.example .env
    ```
 
-2. **Edit `.env`** with your settings:
-   - `DOMAIN`: Your base domain
+2. **Edit `.env`** with your settings (if using dashboard):
+   - `DOMAIN`: Domain for Traefik dashboard (optional - each service has its own domain)
    - `ACME_EMAIL`: Email for Let's Encrypt certificates
+
+   Note: The DOMAIN here is only for the Traefik dashboard. Each service will configure its own domain in its docker-compose.yml.
 
 3. **Create required directories**:
    ```bash

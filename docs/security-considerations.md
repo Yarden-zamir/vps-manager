@@ -6,16 +6,18 @@ This setup prioritizes **convenience and simplicity** over maximum security. It'
 
 ### What's Enabled (for convenience)
 
-1. **Password Authentication** - You can SSH with passwords
-2. **Root Login** - You can SSH directly as root
+1. **Password Authentication** - Each service has its own user with password
+2. **Root Login** - Root manages the VPS and creates services
 3. **All Ports Open** - Services exposed in Docker are immediately accessible
+4. **Per-Service Isolation** - Each service runs under its own Unix user
 
 ### Why This Approach?
 
-- **Easy Recovery**: If you lose SSH keys, you can still access via password
-- **Simple Setup**: No need to manage SSH keys for every user
-- **Quick Access**: Direct root login for administrative tasks
+- **Service Isolation**: Compromised service can't access other services' files
+- **Simple Deployment**: Password-based deployment via GitHub Actions
+- **Easy Management**: Root creates and manages all services
 - **Development Friendly**: No firewall blocking during development
+- **No SSH Keys**: Simpler setup, passwords are auto-generated
 
 ## Security Trade-offs
 
@@ -27,14 +29,32 @@ This setup prioritizes **convenience and simplicity** over maximum security. It'
 
 ### Mitigations Already in Place
 
-1. **Docker Isolation**: Services run in containers
-2. **Separate Networks**: Each app has its own network
-3. **HTTPS by Default**: Traefik provides TLS encryption
-4. **Non-root Containers**: Services don't run as root inside containers
+1. **User Isolation**: Each service has its own Unix user
+2. **Docker Isolation**: Services run in containers
+3. **Separate Networks**: Each app has its own network
+4. **HTTPS by Default**: Traefik provides TLS encryption
+5. **Non-root Containers**: Services don't run as root inside containers
+6. **Auto-generated Passwords**: Strong passwords created automatically
+
+## Per-Service User Architecture
+
+Each service gets:
+- **Dedicated Unix user**: `svc-{servicename}`
+- **Own directories**: `/apps/{service}`, `/persistent/{service}`, `/logs/{service}`
+- **Docker access**: User is in docker group
+- **Password auth**: For deployment via GitHub Actions
+
+Benefits:
+- Services can't read each other's files
+- Separate credentials per service
+- Easy to track resource usage
+- Simple to remove a service completely
 
 ## Hardening Options
 
 If you want better security, you can selectively enable these:
+
+
 
 ### 1. Disable Password Authentication
 

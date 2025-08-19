@@ -20,14 +20,22 @@ A lightweight, Docker-based approach to deploying web applications and services 
    sudo bash bootstrap.sh
    
    # Option 2: Non-interactive mode (provide parameters)
-   curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh | sudo bash -s -- --email admin@example.com --domain example.com
+   curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh | sudo bash -s -- --email admin@example.com
+   
+   # Note: --domain is optional, only needed if you want Traefik dashboard access
    ```
 
-2. **Create a new service**:
+2. **Create a new service** (run from your local machine):
    ```bash
-   # Replace YOUR_GITHUB_USERNAME with your actual GitHub username
+   # Set required environment variables
+   export VPS_HOST="your.vps.ip"
+   export VPS_MANAGER_REPO="YOUR_GITHUB_USERNAME/vps-manager"
+   
+   # Source and run the creation script
    source <(curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/create-service.sh)
-   create-service myapp
+   create-service myapp myapp.com
+   
+   # This will create a service user with password and configure everything
    ```
 
 3. **Deploy** by pushing to main branch - GitHub Actions handles the rest!
@@ -48,8 +56,7 @@ vps-manager/
 │   └── src/
 ├── scripts/                     # Utility scripts
 │   ├── bootstrap.sh            # Initial VPS setup
-│   ├── create-service.sh       # New service creation
-│   └── manage-accounts.py      # Service account management
+│   └── create-service.sh       # Service creation with user management
 └── traefik/                     # Reverse proxy configuration
     └── docker-compose.yml
 ```
@@ -83,7 +90,8 @@ vps-manager/
 - **Traefik** reverse proxy handles TLS and routing
 - Each app gets its own Docker network
 - Apps join shared `public` network for proxy access
-- Automatic Let's Encrypt certificates
+- Automatic Let's Encrypt certificates per service
+- Each service configures its own domain (no global domain needed)
 
 ## 📋 Service Requirements
 
@@ -99,13 +107,11 @@ Every service must:
 
 **This setup prioritizes convenience over maximum security** - perfect for hobby projects!
 
-- Password & root login enabled (for easy access)
-- SSH keys supported (but not required)
+- Root account manages the VPS and creates services
+- Each service gets its own Unix user with password
+- Service isolation through separate user accounts
 - Basic security through Docker isolation
 - HTTPS automatically configured via Traefik
-- Can be hardened later if needed
-
-See [Security Considerations](docs/security-considerations.md) for details and hardening options.
 
 ## 🛠️ Common Commands
 
@@ -126,11 +132,11 @@ docker image prune -a
 docker logs traefik
 ```
 
-## 📚 Learn More
+## 📚 Documentation
 
-- [Complete Setup Guide](docs/setup-guide.md) - Detailed VPS bootstrap instructions
-- [Service Creation Guide](docs/service-creation.md) - Step-by-step service setup
-- [Troubleshooting](docs/troubleshooting.md) - Common issues and fixes
+- [Setup Guide](docs/setup-guide.md) - VPS bootstrap instructions
+- [Service Creation](docs/service-creation.md) - How to create services
+- [Troubleshooting](docs/troubleshooting.md) - Common issues
 
 ## ⚠️ Limitations
 

@@ -16,8 +16,8 @@ Set these in your repository settings under Secrets and Variables > Actions:
 
 ### Secrets:
 - `VPS_HOST` - Your VPS IP address or hostname
-- `VPS_USER` - SSH user (usually `deploy`)
-- `VPS_SSH_KEY` - Private SSH key for deployment
+- `VPS_USER` - Service user (e.g., `svc-myapp`)
+- `VPS_PASSWORD` - Service user password (generated during creation)
 
 ### Variables:
 - `APP_DOMAIN` - Your app's domain (e.g., `myapp.example.com`)

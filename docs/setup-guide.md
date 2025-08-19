@@ -17,28 +17,26 @@ This guide walks you through setting up a fresh VPS for hosting Docker-based ser
 ssh root@YOUR_VPS_IP
 ```
 
-### 1.2 Create Deploy User
+### 1.2 System Configuration
+
+The system will use root for management and create individual service users with passwords for each service. No general deploy user is needed.
+
+### 1.3 Set Up Root SSH Access
+
+Ensure you can SSH as root to your VPS. Most VPS providers set this up by default.
 
 ```bash
-# Create deploy user
-adduser deploy
-
-# Add to sudo group
-usermod -aG sudo deploy
-
-# Switch to deploy user
-su - deploy
+# Test root access
+ssh root@YOUR_VPS_IP
 ```
 
-### 1.3 Set Up SSH Key Authentication
-
-On your local machine:
+If you prefer key-based authentication for root (optional):
 ```bash
 # Generate SSH key if you don't have one
-ssh-keygen -t ed25519 -f ~/.ssh/vps_deploy_key -C "deploy@vps"
+ssh-keygen -t ed25519 -f ~/.ssh/vps_root_key -C "root@vps"
 
 # Copy to VPS
-ssh-copy-id -i ~/.ssh/vps_deploy_key deploy@YOUR_VPS_IP
+ssh-copy-id -i ~/.ssh/vps_root_key root@YOUR_VPS_IP
 ```
 
 ### 1.4 Configure SSH Access
@@ -298,7 +296,10 @@ curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB/vps-manager/main/scripts
 sudo bash bootstrap.sh
 
 # Option 2: Non-interactive mode with parameters
-curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB/vps-manager/main/scripts/bootstrap.sh | sudo bash -s -- --email admin@example.com --domain example.com
+curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB/vps-manager/main/scripts/bootstrap.sh | sudo bash -s -- --email admin@example.com
+
+# Option 3: With Traefik dashboard domain (optional)
+curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB/vps-manager/main/scripts/bootstrap.sh | sudo bash -s -- --email admin@example.com --domain traefik.example.com
 ```
 
 ## Verification

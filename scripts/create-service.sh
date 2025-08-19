@@ -15,8 +15,6 @@ NC='\033[0m' # No Color
 : ${VPS_MANAGER_REPO:?"Please set VPS_MANAGER_REPO environment variable (e.g., 'username/vps-manager')"}
 : ${GITHUB_USERNAME:=$(git config user.name)}
 : ${VPS_HOST:?"Please set VPS_HOST environment variable"}
-: ${VPS_USER:="deploy"}
-: ${VPS_SSH_KEY_PATH:="$HOME/.ssh/vps_deploy_key"}
 
 # Function to print colored output
 print_status() {
@@ -29,6 +27,12 @@ print_error() {
 
 print_warning() {
     echo -e "${YELLOW}!${NC} $1"
+}
+
+# Function to generate secure random password
+generate_password() {
+    # Generate 16-character password with letters, numbers, and basic symbols
+    openssl rand -base64 32 | tr -d "=+/" | cut -c1-16
 }
 
 # Main function to create service
@@ -50,6 +54,47 @@ create-service() {
     echo "🚀 Creating new service: $SERVICE_NAME"
     echo "📍 Domain: $APP_DOMAIN"
     echo ""
+    
+    # Generate service user credentials
+    local SERVICE_USER="svc-${SERVICE_NAME}"
+    local SERVICE_PASSWORD=$(generate_password)
+    
+    print_status "Creating service user on VPS..."
+    
+    # Create user and directories on VPS (as root)
+    ssh "root@$VPS_HOST" << ENDSSH
+# Create service user with password
+useradd -m -s /bin/bash -d /home/$SERVICE_USER $SERVICE_USER
+echo "$SERVICE_USER:$SERVICE_PASSWORD" | chpasswd
+
+# Add to docker group
+usermod -aG docker $SERVICE_USER
+
+# Create service directories with proper ownership
+mkdir -p /apps/$SERVICE_NAME /persistent/$SERVICE_NAME/data /logs/$SERVICE_NAME
+chown -R $SERVICE_USER:$SERVICE_USER /apps/$SERVICE_NAME
+chown -R $SERVICE_USER:$SERVICE_USER /persistent/$SERVICE_NAME
+chown -R $SERVICE_USER:$SERVICE_USER /logs/$SERVICE_NAME
+chmod 755 /apps/$SERVICE_NAME /persistent/$SERVICE_NAME /logs/$SERVICE_NAME
+
+echo "User $SERVICE_USER created successfully"
+ENDSSH
+    
+    if [ $? -eq 0 ]; then
+        print_status "Service user created on VPS"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "🔐 SERVICE CREDENTIALS (SAVE THESE!)"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Username: $SERVICE_USER"
+        echo "Password: $SERVICE_PASSWORD"
+        echo "SSH: ssh $SERVICE_USER@$VPS_HOST"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+    else
+        print_error "Failed to create service user on VPS"
+        return 1
+    fi
     
     # Create service directory
     if [ -d "$SERVICE_NAME" ]; then
@@ -108,35 +153,26 @@ create-service() {
         
         # Set secrets
         gh secret set VPS_HOST -b "$VPS_HOST" || print_warning "Failed to set VPS_HOST secret"
-        gh secret set VPS_USER -b "$VPS_USER" || print_warning "Failed to set VPS_USER secret"
-        
-        # Set SSH key if available
-        if [ -f "$VPS_SSH_KEY_PATH" ]; then
-            gh secret set VPS_SSH_KEY < "$VPS_SSH_KEY_PATH" || print_warning "Failed to set VPS_SSH_KEY secret"
-        else
-            print_warning "SSH key not found at $VPS_SSH_KEY_PATH"
-            print_warning "Please manually add VPS_SSH_KEY secret in GitHub"
-        fi
+        gh secret set VPS_USER -b "$SERVICE_USER" || print_warning "Failed to set VPS_USER secret"
+        gh secret set VPS_PASSWORD -b "$SERVICE_PASSWORD" || print_warning "Failed to set VPS_PASSWORD secret"
         
         # Set variables
         gh variable set APP_DOMAIN -b "$APP_DOMAIN" || print_warning "Failed to set APP_DOMAIN variable"
         gh variable set APP_PORT -b "3000" || print_warning "Failed to set APP_PORT variable"
+        
+        print_status "GitHub secrets configured for password-based deployment"
     else
         print_warning "Please manually set up the following GitHub secrets:"
         echo "  Secrets:"
         echo "    - VPS_HOST: $VPS_HOST"
-        echo "    - VPS_USER: $VPS_USER"
-        echo "    - VPS_SSH_KEY: (contents of $VPS_SSH_KEY_PATH)"
+        echo "    - VPS_USER: $SERVICE_USER"
+        echo "    - VPS_PASSWORD: $SERVICE_PASSWORD"
         echo "  Variables:"
         echo "    - APP_DOMAIN: $APP_DOMAIN"
         echo "    - APP_PORT: 3000"
     fi
     
-    # Create directories on VPS
-    print_status "Creating directories on VPS..."
-    ssh -i "$VPS_SSH_KEY_PATH" "$VPS_USER@$VPS_HOST" \
-        "mkdir -p /apps/$SERVICE_NAME /persistent/$SERVICE_NAME/data /logs/$SERVICE_NAME" || \
-        print_warning "Failed to create VPS directories. You may need to do this manually."
+    # Directories already created with user
     
     # Final instructions
     echo ""
@@ -144,22 +180,12 @@ create-service() {
     echo ""
     echo "Next steps:"
     echo "1. Update your application code in src/"
-    echo "2. Add any required secrets to GitHub"
-    echo "3. Configure DNS to point $APP_DOMAIN to $VPS_HOST"
-    echo "4. Push to main branch to deploy:"
-    echo "   git push origin main"
-    echo ""
-    echo "Local development:"
-    echo "   cd $SERVICE_NAME"
-    echo "   npm install"
-    echo "   npm run dev"
+    echo "2. Configure DNS to point $APP_DOMAIN to $VPS_HOST"
+    echo "3. Push to main branch to deploy"
 }
 
-# Export the function so it can be used when sourced
+# Export the function
 export -f create-service
-export -f print_status
-export -f print_error
-export -f print_warning
 
 # If script is executed directly, show usage
 if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
@@ -169,9 +195,15 @@ if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
     echo "  source $0"
     echo "  create-service <service-name> [domain]"
     echo ""
+    echo "This script will:"
+    echo "  - Create a service-specific user on the VPS"
+    echo "  - Generate a secure password"
+    echo "  - Set up directories with proper ownership"
+    echo "  - Configure GitHub repo and secrets"
+    echo ""
     echo "Required environment variables:"
     echo "  VPS_HOST - Your VPS IP or hostname"
-    echo "  VPS_USER - SSH user (default: deploy)"
-    echo "  VPS_SSH_KEY_PATH - Path to SSH private key (default: ~/.ssh/vps_deploy_key)"
-    echo "  VPS_MANAGER_REPO - GitHub repo for templates (default: YOUR_GITHUB/vps-manager)"
+    echo "  VPS_MANAGER_REPO - GitHub repo for templates"
+    echo ""
+    echo "Note: Run this as root on your local machine with SSH access to root@VPS_HOST"
 fi
