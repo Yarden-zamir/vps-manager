@@ -4,6 +4,10 @@ on:
   push:
     branches: [ main ]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   APP_NAME: ${{ github.event.repository.name }}
 
@@ -110,4 +114,23 @@ jobs:
         password: ${{ secrets.VPS_PASSWORD }}
         script: docker image prune -f --filter "until=24h"
 
+    - name: Verify public HTTPS
+      if: ${{ vars.APP_DOMAIN != '' }}
+      env:
+        APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+      run: |
+        echo "Waiting for HTTPS at https://$APP_DOMAIN ..."
+        success=false
+        for i in {1..90}; do
+          if curl -sS -I --max-time 10 --location https://$APP_DOMAIN | head -n1 | grep -E 'HTTP/.+ (2|3)[0-9][0-9]' > /dev/null; then
+            echo "HTTPS reachable for $APP_DOMAIN"
+            success=true
+            break
+          fi
+          sleep 3
+        done
+        if [ "$success" != true ]; then
+          echo "Timed out waiting for HTTPS at https://$APP_DOMAIN"
+          exit 1
+        fi
 
