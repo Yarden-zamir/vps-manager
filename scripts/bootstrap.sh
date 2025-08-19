@@ -357,7 +357,7 @@ install_tools() {
     print_status "Essential tools installed"
     curl --proto '=https' --tlsv1.2 -sSF https://sh.rustup.rs | sh
     print_status "Rust toolchain installed"
-    cargo install erdtree fd-find atuin
+    cargo install erdtree fd-find atuin ripgrep
     echo 'eval "$(atuin init bash --disable-up-arrow)"' >> ~/.zshrc
         # Install GitHub CLI (optional)
     if ! command -v gh &> /dev/null; then
@@ -366,7 +366,7 @@ install_tools() {
         apt update
         apt install -y gh
     fi
-    print_status "Additional tools installed and configured: erdtree, fd-find, atuin, gh"
+    print_status "Additional tools installed and configured: erdtree, fd-find, atuin, gh, ripgrep"
 
 
 }
