@@ -37,8 +37,34 @@ generate_password() {
 
 # Main function to create service
 create-service() {
+    # Parse options
+    local REPO_NAME=""
+    local LOCAL_PATH=""
+    while [[ "$1" == --* ]]; do
+        case "$1" in
+            --repo|-r)
+                REPO_NAME="$2"
+                shift 2
+                ;;
+            --local-path|-p)
+                LOCAL_PATH="$2"
+                shift 2
+                ;;
+            *)
+                print_error "Unknown option: $1"
+                return 1
+                ;;
+        esac
+    done
+
     local SERVICE_NAME=$1
     local APP_DOMAIN=$2
+    
+    # Require GitHub CLI
+    if ! command -v gh &> /dev/null; then
+        print_error "GitHub CLI 'gh' is required. Install from https://cli.github.com/ and run 'gh auth login'."
+        return 1
+    fi
     
     if [ -z "$SERVICE_NAME" ]; then
         print_error "Usage: create-service <service-name> [domain]"
@@ -57,12 +83,13 @@ create-service() {
     
     # Generate service user credentials
     local SERVICE_USER="svc-${SERVICE_NAME}"
-    local SERVICE_PASSWORD=$(generate_password)
+    local SERVICE_PASSWORD
+    SERVICE_PASSWORD=$(generate_password)
     
     print_status "Creating service user on VPS..."
     
     # Create user and directories on VPS (as root)
-    ssh "root@$VPS_HOST" << ENDSSH
+    ssh "root@$VPS_HOST" << 'ENDSSH'
 # Create service user with password
 useradd -m -s /bin/bash -d /home/$SERVICE_USER $SERVICE_USER
 echo "$SERVICE_USER:$SERVICE_PASSWORD" | chpasswd
@@ -96,59 +123,169 @@ ENDSSH
         return 1
     fi
     
-    # Create service directory
-    if [ -d "$SERVICE_NAME" ]; then
-        print_error "Directory $SERVICE_NAME already exists!"
-        return 1
+    # Determine working directory
+    local WORK_DIR="${LOCAL_PATH:-$SERVICE_NAME}"
+    # EXISTING_DIR tracks if we're using an existing directory (used for messaging)
+    local EXISTING_DIR=0
+    local EXISTING_GIT_REPO=0
+    local EXISTING_REMOTE=""
+    
+    # Check if directory exists
+    if [ -d "$WORK_DIR" ]; then
+        EXISTING_DIR=1
+        print_status "Using existing directory: $WORK_DIR"
+        cd "$WORK_DIR"
+        
+        # Check if it's a git repo
+        if [ -d ".git" ]; then
+            EXISTING_GIT_REPO=1
+            EXISTING_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
+            
+            if [ -n "$EXISTING_REMOTE" ]; then
+                # Extract owner/repo from git URL
+                local DETECTED_REPO=""
+                if [[ "$EXISTING_REMOTE" =~ github\.com[:/]([^/]+/[^/.]+)(\.git)?$ ]]; then
+                    DETECTED_REPO="${BASH_REMATCH[1]}"
+                fi
+                
+                if [ -n "$REPO_NAME" ] && [ "$REPO_NAME" != "$DETECTED_REPO" ]; then
+                    print_error "Existing repo ($DETECTED_REPO) doesn't match specified repo ($REPO_NAME)"
+                    return 1
+                fi
+                
+                if [ -z "$REPO_NAME" ] && [ -n "$DETECTED_REPO" ]; then
+                    REPO_NAME="$DETECTED_REPO"
+                    print_status "Detected existing repo: $REPO_NAME"
+                fi
+            fi
+        fi
+    else
+        print_status "Creating directory: $WORK_DIR"
+        mkdir -p "$WORK_DIR"
+        cd "$WORK_DIR"
     fi
     
-    print_status "Creating service directory..."
-    mkdir -p "$SERVICE_NAME"
-    cd "$SERVICE_NAME"
+    # Log whether we're using an existing directory (affects template behavior)
+    if [ "$EXISTING_DIR" -eq 1 ]; then
+        print_status "Working in existing directory - will preserve existing files"
+    fi
     
     # Download template
     print_status "Downloading template from $VPS_MANAGER_REPO..."
+    
+    # Create temp directory for template
+    local TEMP_DIR
+    TEMP_DIR=$(mktemp -d)
     curl -sL "https://github.com/${VPS_MANAGER_REPO}/archive/main.tar.gz" | \
-        tar xz --strip-components=2 "vps-manager-main/template/"
+        tar xz -C "$TEMP_DIR" --strip-components=2 "vps-manager-main/template/"
+    
+    # Copy template files without overwriting existing ones
+    print_status "Copying template files (preserving existing files)..."
+    find "$TEMP_DIR" -type f -print0 | while IFS= read -r -d '' file; do
+        local rel_path="${file#$TEMP_DIR/}"
+        local target_file="./$rel_path"
+        local target_dir
+        target_dir=$(dirname "$target_file")
+        
+        # Create directory if needed
+        [ ! -d "$target_dir" ] && mkdir -p "$target_dir"
+        
+        # Copy file only if it doesn't exist
+        if [ ! -f "$target_file" ]; then
+            cp "$file" "$target_file"
+        else
+            print_warning "Skipping existing file: $rel_path"
+        fi
+    done
+    
+    # Clean up temp directory
+    rm -rf "$TEMP_DIR"
     
     # Update service name in files
     print_status "Customizing template for $SERVICE_NAME..."
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        find . -type f -name "*.yml" -o -name "*.yaml" -o -name "*.json" -o -name "*.md" -o -name "*.js" | \
-            xargs sed -i '' "s/myapp/$SERVICE_NAME/g"
+        find . -type f \( -name "*.yml" -o -name "*.yaml" -o -name "*.json" -o -name "*.md" -o -name "*.js" \) -print0 | \
+            xargs -0 sed -i '' "s/myapp/$SERVICE_NAME/g"
         sed -i '' "s/app-template/$SERVICE_NAME/g" package.json
         sed -i '' "s/myapp.example.com/$APP_DOMAIN/g" env.example
     else
         # Linux
-        find . -type f -name "*.yml" -o -name "*.yaml" -o -name "*.json" -o -name "*.md" -o -name "*.js" | \
-            xargs sed -i "s/myapp/$SERVICE_NAME/g"
+        find . -type f \( -name "*.yml" -o -name "*.yaml" -o -name "*.json" -o -name "*.md" -o -name "*.js" \) -print0 | \
+            xargs -0 sed -i "s/myapp/$SERVICE_NAME/g"
         sed -i "s/app-template/$SERVICE_NAME/g" package.json
         sed -i "s/myapp.example.com/$APP_DOMAIN/g" env.example
     fi
     
-    # Initialize git repo
-    print_status "Initializing git repository..."
-    git init
-    git add .
-    git commit -m "Initial commit from VPS service template"
+    # Initialize git repo if needed
+    if [ "$EXISTING_GIT_REPO" -eq 0 ]; then
+        print_status "Initializing git repository..."
+        git init -b main || { git init && git branch -M main; }
+    fi
     
-    # Create GitHub repository
-    if command -v gh &> /dev/null; then
-        print_status "Creating GitHub repository..."
-        gh repo create "$SERVICE_NAME" --private --source=. --remote=origin --push || {
-            print_warning "Failed to create GitHub repo. You'll need to create it manually."
-        }
+    # Add and commit changes
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+        print_status "Committing template files..."
+        git add .
+        git commit -m "Add VPS service template" || print_warning "Nothing to commit"
     else
-        print_warning "GitHub CLI not found. Please create repository manually:"
-        echo "  1. Go to https://github.com/new"
-        echo "  2. Name it: $SERVICE_NAME"
-        echo "  3. Run: git remote add origin git@github.com:$GITHUB_USERNAME/$SERVICE_NAME.git"
-        echo "  4. Run: git push -u origin main"
+        print_status "No changes to commit"
+    fi
+    
+    # Handle GitHub repository
+    if [ -n "$EXISTING_REMOTE" ]; then
+        # Already has remote, just push if needed
+        print_status "Using existing GitHub remote: $REPO_NAME"
+        if [ -n "$(git log origin/main..HEAD 2>/dev/null)" ]; then
+            git push origin main || print_warning "Push failed. You may need to pull first."
+        fi
+    else
+        # Need to create or connect repo
+        if [ -z "$REPO_NAME" ]; then
+            # Auto-detect if repo exists
+            print_status "Checking if GitHub repo '$SERVICE_NAME' exists..."
+            if gh repo view "$GITHUB_USERNAME/$SERVICE_NAME" &> /dev/null; then
+                REPO_NAME="$GITHUB_USERNAME/$SERVICE_NAME"
+                print_status "Found existing repo: $REPO_NAME"
+            else
+                # Create new repo
+                print_status "Creating new GitHub repository..."
+                gh repo create "$SERVICE_NAME" --private --source=. --remote=origin --push || {
+                    print_error "Failed to create and push to GitHub repo."
+                    return 1
+                }
+                REPO_NAME="$GITHUB_USERNAME/$SERVICE_NAME"
+            fi
+        fi
+        
+        # Connect to specified/detected repo if not already connected
+        if [ -z "$EXISTING_REMOTE" ] && [ -n "$REPO_NAME" ]; then
+            print_status "Connecting to GitHub repository: $REPO_NAME"
+            if ! gh repo view "$REPO_NAME" &> /dev/null; then
+                # Try to create it if it doesn't exist and matches pattern
+                if [[ "$REPO_NAME" =~ ^$GITHUB_USERNAME/(.+)$ ]]; then
+                    local REPO_SHORT_NAME="${BASH_REMATCH[1]}"
+                    print_status "Creating GitHub repository: $REPO_NAME"
+                    gh repo create "$REPO_SHORT_NAME" --private || {
+                        print_error "Failed to create GitHub repo: $REPO_NAME"
+                        return 1
+                    }
+                else
+                    print_error "Repository '$REPO_NAME' not found or inaccessible."
+                    return 1
+                fi
+            fi
+            
+            git remote add origin "git@github.com:$REPO_NAME.git" || {
+                print_error "Failed to add remote origin."
+                return 1
+            }
+            git push -u origin main || print_warning "Push failed. You may need to reconcile history."
+        fi
     fi
     
     # Set up GitHub secrets
-    if command -v gh &> /dev/null && git remote get-url origin &> /dev/null; then
+    if git remote get-url origin &> /dev/null; then
         print_status "Setting up GitHub secrets..."
         
         # Set secrets
@@ -162,14 +299,8 @@ ENDSSH
         
         print_status "GitHub secrets configured for password-based deployment"
     else
-        print_warning "Please manually set up the following GitHub secrets:"
-        echo "  Secrets:"
-        echo "    - VPS_HOST: $VPS_HOST"
-        echo "    - VPS_USER: $SERVICE_USER"
-        echo "    - VPS_PASSWORD: $SERVICE_PASSWORD"
-        echo "  Variables:"
-        echo "    - APP_DOMAIN: $APP_DOMAIN"
-        echo "    - APP_PORT: 3000"
+        print_error "Git remote 'origin' is not configured. Cannot set GitHub secrets."
+        return 1
     fi
     
     # Directories already created with user
@@ -193,17 +324,25 @@ if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
     echo ""
     echo "Usage:"
     echo "  source $0"
-    echo "  create-service <service-name> [domain]"
+    echo "  create-service [--repo|-r owner/name] [--local-path|-p path] <service-name> [domain]"
     echo ""
     echo "This script will:"
     echo "  - Create a service-specific user on the VPS"
     echo "  - Generate a secure password"
     echo "  - Set up directories with proper ownership"
-    echo "  - Configure GitHub repo and secrets"
+    echo "  - Create or connect a GitHub repo and configure secrets"
     echo ""
     echo "Required environment variables:"
     echo "  VPS_HOST - Your VPS IP or hostname"
     echo "  VPS_MANAGER_REPO - GitHub repo for templates"
     echo ""
-    echo "Note: Run this as root on your local machine with SSH access to root@VPS_HOST"
+    echo "Requirements:"
+    echo "  - gh (GitHub CLI) installed and authenticated (run: gh auth login)"
+    echo "  - SSH access as root to your VPS host"
+    echo ""
+    echo "Options:"
+    echo "  --repo|-r owner/name    Specify GitHub repo (auto-detected if omitted)"
+    echo "  --local-path|-p path    Use specific local directory (defaults to service-name)"
+    echo ""
+    echo "Note: Run this with SSH access to root@VPS_HOST"
 fi
