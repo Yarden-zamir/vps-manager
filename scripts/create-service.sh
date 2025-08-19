@@ -296,6 +296,8 @@ ENDSSH
                     return 1
                 }
                 REPO_NAME="$GITHUB_USERNAME/$SERVICE_NAME"
+                # Update EXISTING_REMOTE since gh repo create with --source and --remote sets it up
+                EXISTING_REMOTE="git@github.com:$REPO_NAME.git"
             fi
         fi
         

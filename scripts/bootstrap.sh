@@ -149,13 +149,34 @@ configure_ssh() {
     # Enable public key authentication
     sed -i 's/#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
     
-    # Restart SSH (handle different service names)
+    # Enable password authentication (many VPS providers disable this by default)
+    sed -i 's/#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    
+    # Ensure root login is permitted with password (not just "without-password")
+    sed -i 's/#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+    
+    # Remove cloud-init SSH restrictions if they exist
+    rm -f /etc/ssh/sshd_config.d/50-cloud-init.conf 2>/dev/null
+    rm -f /etc/ssh/sshd_config.d/*cloud-init* 2>/dev/null
+    
+    # Create override file to ensure our settings persist
+    cat > /etc/ssh/sshd_config.d/99-vps-manager.conf <<EOF
+# VPS Manager SSH Configuration
+# This file ensures password authentication works properly
+PermitRootLogin yes
+PasswordAuthentication yes
+PubkeyAuthentication yes
+EOF
+    
+    # Enable and restart SSH (handle different service names)
     if systemctl list-unit-files | grep -q "^sshd.service"; then
+        systemctl enable sshd
         systemctl restart sshd
     elif systemctl list-unit-files | grep -q "^ssh.service"; then
+        systemctl enable ssh
         systemctl restart ssh
     fi
-    print_status "SSH configured"
+    print_status "SSH configured (password and key authentication enabled)"
 }
 
 install_docker() {

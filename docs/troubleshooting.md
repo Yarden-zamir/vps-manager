@@ -315,6 +315,46 @@ rsync -av backup/ /persistent/myapp/
 
 ## Bootstrap Script Issues
 
+### SSH Password Authentication Not Working
+After running the bootstrap script, password authentication may not work.
+
+**Cause:**
+1. Many VPS providers (DigitalOcean, Vultr, Linode, etc.) disable password authentication by default when provisioning servers with SSH keys.
+2. The SSH service itself may be disabled.
+3. Cloud-init creates override files that set `PermitRootLogin without-password` (allows only SSH key login for root).
+
+**Solution:**
+```bash
+# Check current SSH settings
+sudo sshd -T | grep -E "permitrootlogin|passwordauthentication"
+
+# If you see "permitrootlogin without-password", that's the issue!
+# Remove cloud-init override
+sudo rm -f /etc/ssh/sshd_config.d/50-cloud-init.conf
+
+# Create proper override file
+sudo tee /etc/ssh/sshd_config.d/99-enable-passwords.conf > /dev/null <<EOF
+PermitRootLogin yes
+PasswordAuthentication yes
+PubkeyAuthentication yes
+EOF
+
+# Restart SSH service
+sudo systemctl restart ssh  # Ubuntu/Debian
+# or
+sudo systemctl restart sshd  # RHEL/CentOS
+
+# Verify the fix
+sudo sshd -T | grep permitrootlogin  # Should show "permitrootlogin yes"
+```
+
+**Understanding PermitRootLogin Values:**
+- `yes` - Root can login with password OR SSH keys
+- `without-password` or `prohibit-password` - Root can ONLY login with SSH keys (no passwords)
+- `no` - Root cannot login at all
+
+Note: The updated bootstrap script now handles this automatically by removing cloud-init overrides.
+
 ### SSH Service Not Found
 ```
 Error: Failed to restart sshd.service: Unit sshd.service not found
