@@ -9,6 +9,7 @@ This repository provides a complete solution for managing Docker-based deploymen
 - **docs/setup-guide.md** - Complete VPS bootstrap instructions
 - **docs/service-creation.md** - Detailed guide for creating new services
 - **docs/troubleshooting.md** - Common issues and solutions
+- **docs/traefik-routing.md** - How Traefik routes and labels expose services over HTTPS
 
 ### 🛠️ Scripts
 - **scripts/bootstrap.sh** - Automated VPS setup script that:

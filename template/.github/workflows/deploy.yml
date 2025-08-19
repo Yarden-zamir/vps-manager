@@ -15,63 +15,99 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Deploy to VPS
+    - name: Create app directory
+      uses: appleboy/ssh-action@v1
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        password: ${{ secrets.VPS_PASSWORD }}
+        script: mkdir -p /apps/${{ env.APP_NAME }}
+
+    - name: Clear existing files
+      uses: appleboy/ssh-action@v1
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        password: ${{ secrets.VPS_PASSWORD }}
+        script: rm -rf /apps/${{ env.APP_NAME }}/{*,.[!.]*,..?*}
+
+    - name: Copy files to VPS
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        password: ${{ secrets.VPS_PASSWORD }}
+        source: "./"
+        target: "/apps/${{ env.APP_NAME }}"
+        overwrite: true
+
+    - name: Create .env file
+      uses: appleboy/ssh-action@v1
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        password: ${{ secrets.VPS_PASSWORD }}
+        envs: APP_NAME,APP_DOMAIN,APP_PORT,COMMIT_SHA
+        script: |
+          cd /apps/$APP_NAME
+          : > .env
+          echo "NODE_ENV=production" >> .env
+          echo "APP_NAME=$APP_NAME" >> .env
+          echo "APP_DOMAIN=$APP_DOMAIN" >> .env
+          echo "APP_PORT=$APP_PORT" >> .env
+          echo "COMMIT_SHA=$COMMIT_SHA" >> .env
       env:
-        VPS_HOST: ${{ secrets.VPS_HOST }}
-        VPS_USER: ${{ secrets.VPS_USER }}
-        VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+        APP_NAME: ${{ env.APP_NAME }}
         APP_DOMAIN: ${{ vars.APP_DOMAIN }}
         APP_PORT: ${{ vars.APP_PORT }}
-      run: |
-        # Install sshpass for password authentication
-        sudo apt-get update && sudo apt-get install -y sshpass
-        
-        # Add host to known hosts
-        mkdir -p ~/.ssh
-        ssh-keyscan -H $VPS_HOST >> ~/.ssh/known_hosts
-        
-        # Create app directory on VPS
-        sshpass -p "$VPS_PASSWORD" ssh $VPS_USER@$VPS_HOST "mkdir -p /apps/$APP_NAME"
-        
-        # Clear existing files (non-atomic deploy)
-        sshpass -p "$VPS_PASSWORD" ssh $VPS_USER@$VPS_HOST "rm -rf /apps/$APP_NAME/*"
-        
-        # Copy files to VPS
-        sshpass -p "$VPS_PASSWORD" scp -r ./* $VPS_USER@$VPS_HOST:/apps/$APP_NAME/
-        
-        # Create .env file with production secrets
-        sshpass -p "$VPS_PASSWORD" ssh $VPS_USER@$VPS_HOST << 'ENDSSH'
-        cd /apps/$APP_NAME
-        
-        cat > .env << EOF
-        NODE_ENV=production
-        APP_NAME=${{ env.APP_NAME }}
-        APP_DOMAIN=${{ vars.APP_DOMAIN }}
-        APP_PORT=${{ vars.APP_PORT }}
-        COMMIT_SHA=${{ github.sha }}
-        EOF
-        
-        # Build and deploy
-        docker compose build --pull --build-arg COMMIT_SHA=${{ github.sha }}
-        docker compose up -d --force-recreate
-        
-        # Wait for health check
-        echo "Waiting for service to be healthy..."
-        for i in {1..30}; do
-          if docker compose ps | grep -q "healthy"; then
-            echo "Service is healthy!"
-            break
-          fi
-          if [ $i -eq 30 ]; then
-            echo "Service failed to become healthy"
-            docker compose logs
-            exit 1
-          fi
-          sleep 2
-        done
-        
-        # Cleanup old images
-        docker image prune -f --filter "until=24h"
-        ENDSSH
+        COMMIT_SHA: ${{ github.sha }}
+
+    - name: Build and deploy
+      uses: appleboy/ssh-action@v1
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        password: ${{ secrets.VPS_PASSWORD }}
+        envs: APP_NAME,COMMIT_SHA
+        script: |
+          cd /apps/$APP_NAME
+          docker compose build --pull --build-arg COMMIT_SHA=$COMMIT_SHA
+          docker compose up -d --force-recreate
+      env:
+        APP_NAME: ${{ env.APP_NAME }}
+        COMMIT_SHA: ${{ github.sha }}
+
+    - name: Wait for health check
+      uses: appleboy/ssh-action@v1
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        password: ${{ secrets.VPS_PASSWORD }}
+        envs: APP_NAME
+        script: |
+          cd /apps/$APP_NAME
+          echo "Waiting for service to be healthy..."
+          for i in {1..30}; do
+            if docker compose ps | grep -q "healthy"; then
+              echo "Service is healthy!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Service failed to become healthy"
+              docker compose logs
+              exit 1
+            fi
+            sleep 2
+          done
+      env:
+        APP_NAME: ${{ env.APP_NAME }}
+
+    - name: Cleanup old images
+      uses: appleboy/ssh-action@v1
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        password: ${{ secrets.VPS_PASSWORD }}
+        script: docker image prune -f --filter "until=24h"
 
 

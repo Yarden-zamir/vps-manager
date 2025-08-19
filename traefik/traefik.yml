@@ -64,7 +64,6 @@ certificatesResolvers:
       # HTTP Challenge
       httpChallenge:
         entryPoint: web
-
       # DNS Challenge (optional, for wildcard certs)
       # dnsChallenge:
       #   provider: cloudflare
@@ -73,11 +72,12 @@ certificatesResolvers:
       #     - "1.1.1.1:53"
       #     - "8.8.8.8:53"
 
-      # IMPORTANT: Comment out for production!
-      # Let's Encrypt staging server (higher rate limits for testing)
-      caServer: https://acme-staging-v02.api.letsencrypt.org/directory
+      # IMPORTANT: For production certificates, ensure the staging server is disabled.
+      # To test without rate limits, you can temporarily set the staging server below,
+      # but comment it out for real deployments.
+      # caServer: https://acme-staging-v02.api.letsencrypt.org/directory
 
-# Logs
+      # Logs
 log:
   level: INFO # DEBUG, INFO, WARN, ERROR
   format: json

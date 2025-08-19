@@ -11,8 +11,7 @@ services:
     restart: unless-stopped
     env_file:
       - .env
-    ports:
-      - "${APP_PORT:-3000}:3000"
+    # Expose only via Traefik; do not bind host ports directly
     networks:
       - app-network
       - public
