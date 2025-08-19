@@ -1,9 +1,31 @@
-#!/bin/bash
-
+#!/usr/bin/env bash
+#
 # VPS Service Creator
 # This script creates a new service from the template and sets up deployment
+# Compatible with both bash and zsh
 
-set -e
+# Detect if script is being sourced (works in both bash and zsh)
+if [ -n "$ZSH_VERSION" ]; then
+    # zsh
+    SOURCED=0
+    if [[ "$ZSH_EVAL_CONTEXT" =~ :file$ ]]; then
+        SOURCED=1
+    fi
+elif [ -n "$BASH_VERSION" ]; then
+    # bash
+    SOURCED=0
+    if [ "${BASH_SOURCE[0]}" != "${0}" ]; then
+        SOURCED=1
+    fi
+else
+    # Unknown shell, assume not sourced
+    SOURCED=0
+fi
+
+# Don't use set -e when script is sourced - it will crash the shell
+if [ "$SOURCED" -eq 0 ]; then
+    set -e
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -11,23 +33,33 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Required environment variables
-: ${VPS_MANAGER_REPO:?"Please set VPS_MANAGER_REPO environment variable (e.g., 'username/vps-manager')"}
-: ${GITHUB_USERNAME:=$(git config user.name)}
-: ${VPS_HOST:?"Please set VPS_HOST environment variable"}
-
-# Function to print colored output
+# Function to print colored output (using printf for portability)
 print_status() {
-    echo -e "${GREEN}✓${NC} $1"
+    printf "${GREEN}✓${NC} %s\n" "$1"
 }
 
 print_error() {
-    echo -e "${RED}✗${NC} $1"
+    printf "${RED}✗${NC} %s\n" "$1"
 }
 
 print_warning() {
-    echo -e "${YELLOW}!${NC} $1"
+    printf "${YELLOW}!${NC} %s\n" "$1"
 }
+
+# Check required environment variables
+if [ -z "$VPS_MANAGER_REPO" ]; then
+    print_error "Please set VPS_MANAGER_REPO environment variable (e.g., 'username/vps-manager')"
+    return 1 2>/dev/null || exit 1
+fi
+
+if [ -z "$GITHUB_USERNAME" ]; then
+    GITHUB_USERNAME=$(git config user.name)
+fi
+
+if [ -z "$VPS_HOST" ]; then
+    print_error "Please set VPS_HOST environment variable"
+    return 1 2>/dev/null || exit 1
+fi
 
 # Function to generate secure random password
 generate_password() {
@@ -67,18 +99,25 @@ create-service() {
     fi
     
     if [ -z "$SERVICE_NAME" ]; then
-        print_error "Usage: create-service <service-name> [domain]"
+        print_error "Usage: create-service --local-path <path> <service-name> [domain]"
         return 1
     fi
     
-    # Set default domain if not provided
+    if [ -z "$LOCAL_PATH" ]; then
+        print_error "Error: --local-path is required"
+        echo "Usage: create-service --local-path <path> <service-name> [domain]"
+        return 1
+    fi
+    
+    # Handle domain
     if [ -z "$APP_DOMAIN" ]; then
-        APP_DOMAIN="${SERVICE_NAME}.${VPS_HOST}"
-        print_warning "No domain provided, using: $APP_DOMAIN"
+        print_warning "No domain provided. Domain-specific features will be skipped."
     fi
     
     echo "🚀 Creating new service: $SERVICE_NAME"
-    echo "📍 Domain: $APP_DOMAIN"
+    if [ -n "$APP_DOMAIN" ]; then
+        echo "📍 Domain: $APP_DOMAIN"
+    fi
     echo ""
     
     # Generate service user credentials
@@ -89,7 +128,7 @@ create-service() {
     print_status "Creating service user on VPS..."
     
     # Create user and directories on VPS (as root)
-    ssh "root@$VPS_HOST" << 'ENDSSH'
+    ssh "root@$VPS_HOST" << ENDSSH
 # Create service user with password
 useradd -m -s /bin/bash -d /home/$SERVICE_USER $SERVICE_USER
 echo "$SERVICE_USER:$SERVICE_PASSWORD" | chpasswd
@@ -123,8 +162,8 @@ ENDSSH
         return 1
     fi
     
-    # Determine working directory
-    local WORK_DIR="${LOCAL_PATH:-$SERVICE_NAME}"
+    # Use provided local path as working directory
+    local WORK_DIR="$LOCAL_PATH"
     # EXISTING_DIR tracks if we're using an existing directory (used for messaging)
     local EXISTING_DIR=0
     local EXISTING_GIT_REPO=0
@@ -142,11 +181,9 @@ ENDSSH
             EXISTING_REMOTE=$(git remote get-url origin 2>/dev/null || echo "")
             
             if [ -n "$EXISTING_REMOTE" ]; then
-                # Extract owner/repo from git URL
+                # Extract owner/repo from git URL (portable regex)
                 local DETECTED_REPO=""
-                if [[ "$EXISTING_REMOTE" =~ github\.com[:/]([^/]+/[^/.]+)(\.git)?$ ]]; then
-                    DETECTED_REPO="${BASH_REMATCH[1]}"
-                fi
+                DETECTED_REPO=$(echo "$EXISTING_REMOTE" | sed -E 's/.*github\.com[:\/]([^\/]+\/[^\/\.]+)(\.git)?$/\1/' | grep -E '^[^/]+/[^/]+$' || echo "")
                 
                 if [ -n "$REPO_NAME" ] && [ "$REPO_NAME" != "$DETECTED_REPO" ]; then
                     print_error "Existing repo ($DETECTED_REPO) doesn't match specified repo ($REPO_NAME)"
@@ -208,13 +245,17 @@ ENDSSH
         find . -type f \( -name "*.yml" -o -name "*.yaml" -o -name "*.json" -o -name "*.md" -o -name "*.js" \) -print0 | \
             xargs -0 sed -i '' "s/myapp/$SERVICE_NAME/g"
         sed -i '' "s/app-template/$SERVICE_NAME/g" package.json
-        sed -i '' "s/myapp.example.com/$APP_DOMAIN/g" env.example
+        if [ -n "$APP_DOMAIN" ]; then
+            sed -i '' "s/myapp.example.com/$APP_DOMAIN/g" env.example
+        fi
     else
         # Linux
         find . -type f \( -name "*.yml" -o -name "*.yaml" -o -name "*.json" -o -name "*.md" -o -name "*.js" \) -print0 | \
             xargs -0 sed -i "s/myapp/$SERVICE_NAME/g"
         sed -i "s/app-template/$SERVICE_NAME/g" package.json
-        sed -i "s/myapp.example.com/$APP_DOMAIN/g" env.example
+        if [ -n "$APP_DOMAIN" ]; then
+            sed -i "s/myapp.example.com/$APP_DOMAIN/g" env.example
+        fi
     fi
     
     # Initialize git repo if needed
@@ -263,8 +304,10 @@ ENDSSH
             print_status "Connecting to GitHub repository: $REPO_NAME"
             if ! gh repo view "$REPO_NAME" &> /dev/null; then
                 # Try to create it if it doesn't exist and matches pattern
-                if [[ "$REPO_NAME" =~ ^$GITHUB_USERNAME/(.+)$ ]]; then
-                    local REPO_SHORT_NAME="${BASH_REMATCH[1]}"
+                # Extract repo name after username/ (portable)
+                local REPO_SHORT_NAME=""
+                REPO_SHORT_NAME=$(echo "$REPO_NAME" | sed "s/^$GITHUB_USERNAME\///")
+                if [ "$REPO_SHORT_NAME" != "$REPO_NAME" ]; then
                     print_status "Creating GitHub repository: $REPO_NAME"
                     gh repo create "$REPO_SHORT_NAME" --private || {
                         print_error "Failed to create GitHub repo: $REPO_NAME"
@@ -294,7 +337,9 @@ ENDSSH
         gh secret set VPS_PASSWORD -b "$SERVICE_PASSWORD" || print_warning "Failed to set VPS_PASSWORD secret"
         
         # Set variables
-        gh variable set APP_DOMAIN -b "$APP_DOMAIN" || print_warning "Failed to set APP_DOMAIN variable"
+        if [ -n "$APP_DOMAIN" ]; then
+            gh variable set APP_DOMAIN -b "$APP_DOMAIN" || print_warning "Failed to set APP_DOMAIN variable"
+        fi
         gh variable set APP_PORT -b "3000" || print_warning "Failed to set APP_PORT variable"
         
         print_status "GitHub secrets configured for password-based deployment"
@@ -311,20 +356,23 @@ ENDSSH
     echo ""
     echo "Next steps:"
     echo "1. Update your application code in src/"
-    echo "2. Configure DNS to point $APP_DOMAIN to $VPS_HOST"
+    if [ -n "$APP_DOMAIN" ]; then
+        echo "2. Configure DNS to point $APP_DOMAIN to $VPS_HOST"
+    else
+        echo "2. Configure your domain when ready"
+    fi
     echo "3. Push to main branch to deploy"
 }
 
-# Export the function
-export -f create-service
+# Note: Functions cannot be exported in zsh, but they're available after sourcing
 
 # If script is executed directly, show usage
-if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
+if [ "$SOURCED" -eq 0 ]; then
     echo "VPS Service Creator"
     echo ""
     echo "Usage:"
     echo "  source $0"
-    echo "  create-service [--repo|-r owner/name] [--local-path|-p path] <service-name> [domain]"
+    echo "  create-service --local-path <path> [--repo <owner/name>] <service-name> [domain]"
     echo ""
     echo "This script will:"
     echo "  - Create a service-specific user on the VPS"
@@ -340,9 +388,14 @@ if [ "${BASH_SOURCE[0]}" == "${0}" ]; then
     echo "  - gh (GitHub CLI) installed and authenticated (run: gh auth login)"
     echo "  - SSH access as root to your VPS host"
     echo ""
-    echo "Options:"
-    echo "  --repo|-r owner/name    Specify GitHub repo (auto-detected if omitted)"
-    echo "  --local-path|-p path    Use specific local directory (defaults to service-name)"
+    echo "Required options:"
+    echo "  --local-path|-p <path>  Path to the local directory for your service"
+    echo "                          This is where template files will be created"
+    echo "                          and where your service code will live"
+    echo ""
+    echo "Optional options:"
+    echo "  --repo|-r <owner/name>  Specify GitHub repo (auto-detected if omitted)"
+    echo "  domain                  Domain for your service (can be added later)"
     echo ""
     echo "Note: Run this with SSH access to root@VPS_HOST"
 fi
