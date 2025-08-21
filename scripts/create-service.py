@@ -32,6 +32,7 @@ import requests
 import secrets
 import string
 import sh
+import json
 
 __version__ = "2.2.0"
 
@@ -87,6 +88,14 @@ def check_requirements() -> None:
         sh.gh("auth", "status", _out=lambda x: None, _err=lambda x: None)
     except sh.ErrorReturnCode:
         console.print("[red]Error:[/red] GitHub CLI not authenticated. Run: gh auth login")
+        raise typer.Exit(1)
+
+    # Check for jq (used to sanitize gh JSON output)
+    try:
+        sh.jq("--version", _out=lambda x: None)
+    except sh.CommandNotFound:
+        console.print("[red]Error:[/red] jq is required but not found. Install jq and retry.")
+        console.print("macOS: brew install jq | Debian/Ubuntu: sudo apt-get install jq | Alpine: apk add jq")
         raise typer.Exit(1)
 
 
@@ -204,9 +213,19 @@ def ssh_command(host: str, command: str, description: str) -> bool:
     
     try:
         # Use subprocess for better control over interactive SSH
+        # -q and LogLevel=ERROR suppress non-essential messages like
+        # "Connection to <host> closed." while keeping prompts visible
         process = subprocess.run(
-            ["ssh", "-t", host, command],
-            check=True
+            [
+                "ssh",
+                "-q",
+                "-o",
+                "LogLevel=ERROR",
+                "-t",
+                host,
+                command,
+            ],
+            check=True,
         )
         console.print(f"[green]✓[/green] {description}")
         return True
@@ -510,8 +529,22 @@ api:
         git("checkout", "-b", branch_name)
     
     git("add", str(zone_file))
-    git("commit", "-m", f"Add DNS configuration for {domain}\n\n"
-        f"- Service: {service_name}\n- VPS IP: {vps_ip}")
+    # If there are no changes staged, skip committing/PR creation
+    status = git("status", "--porcelain").strip()
+    if not status:
+        console.print(
+            f"[yellow]No DNS changes detected for {domain}. Skipping commit and PR creation.[/yellow]"
+        )
+        return ""
+
+    # Use multiple -m flags to create a multi-paragraph commit message safely
+    git(
+        "commit",
+        "-m",
+        f"Add DNS configuration for {domain}",
+        "-m",
+        f"- Service: {service_name}\n- VPS IP: {vps_ip}",
+    )
     
     console.print(f"[green]✓[/green] Created branch: {branch_name}")
     
@@ -568,22 +601,34 @@ def wait_for_pr_merge(pr_url: str, repo: str) -> bool:
         
         while True:
             try:
-                # Check PR status
-                pr_status = sh.gh("pr", "view", pr_number, "--json", "state,merged", 
-                                 "--repo", repo).strip()
-                pr_data = yaml.safe_load(pr_status)
-                
-                if pr_data.get("merged"):
+                # Use gh pr view with no-color and pipe through jq to ensure clean JSON
+                pr_out = sh.bash(
+                    "-lc",
+                    f"NO_COLOR=1 gh pr view {pr_number} --json state,mergedAt,mergeCommit --repo {repo} --color never | jq -c .",
+                ).strip()
+                if not pr_out:
+                    time.sleep(5)
+                    continue
+                try:
+                    pr_data = json.loads(pr_out)
+                except json.JSONDecodeError:
+                    console.print(f"[yellow]Received non-JSON response from gh; retrying...[/yellow] {pr_out}")
+                    time.sleep(5)
+                    continue
+
+                # Consider merged if mergedAt present or mergeCommit exists
+                if pr_data.get("mergedAt") or pr_data.get("mergeCommit"):
                     progress.update(task, completed=True)
                     console.print(f"[green]✓[/green] PR #{pr_number} has been merged!")
                     return True
-                elif pr_data.get("state") == "CLOSED":
+                elif str(pr_data.get("state") or "").upper() == "CLOSED":
                     progress.update(task, completed=True)
                     console.print(f"[red]✗[/red] PR #{pr_number} was closed without merging")
                     return False
                 
-                time.sleep(10)  # Check every 10 seconds
-            except sh.ErrorReturnCode:
+                time.sleep(5)  # Check every 5 seconds
+            except sh.ErrorReturnCode as e:
+                console.print(f"[red]Failed to check PR status[/red] - error: {e}")
                 time.sleep(10)  # Retry on error
             except KeyboardInterrupt:
                 console.print("\n[yellow]Cancelled waiting for PR merge[/yellow]")
