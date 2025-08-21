@@ -601,30 +601,44 @@ def wait_for_pr_merge(pr_url: str, repo: str) -> bool:
         
         while True:
             try:
-                # Use gh pr view with no-color and pipe through jq to ensure clean JSON
-                pr_out = sh.bash(
-                    "-lc",
-                    f"NO_COLOR=1 gh pr view {pr_number} --json state,mergedAt,mergeCommit --repo {repo} --color never | jq -c .",
-                ).strip()
-                if not pr_out:
-                    time.sleep(5)
-                    continue
+                # Check if PR still exists and get its state
                 try:
-                    pr_data = json.loads(pr_out)
-                except json.JSONDecodeError:
-                    console.print(f"[yellow]Received non-JSON response from gh; retrying...[/yellow] {pr_out}")
-                    time.sleep(5)
-                    continue
-
-                # Consider merged if mergedAt present or mergeCommit exists
-                if pr_data.get("mergedAt") or pr_data.get("mergeCommit"):
-                    progress.update(task, completed=True)
-                    console.print(f"[green]✓[/green] PR #{pr_number} has been merged!")
-                    return True
-                elif str(pr_data.get("state") or "").upper() == "CLOSED":
-                    progress.update(task, completed=True)
-                    console.print(f"[red]✗[/red] PR #{pr_number} was closed without merging")
-                    return False
+                    # Use environment variables and sed to strip ANSI codes before jq
+                    pr_out = sh.bash(
+                        "-lc", 
+                        f"NO_COLOR=1 GH_NO_COLOR=1 gh pr view {pr_number} --json state --repo {repo} | sed 's/\x1b\[[0-9;]*m//g' | jq -r .state",
+                    ).strip()
+                    
+                    if pr_out == "MERGED":
+                        progress.update(task, completed=True)
+                        console.print(f"[green]✓[/green] PR #{pr_number} has been merged!")
+                        return True
+                    elif pr_out == "CLOSED":
+                        progress.update(task, completed=True)
+                        console.print(f"[red]✗[/red] PR #{pr_number} was closed without merging")
+                        return False
+                    elif pr_out == "OPEN":
+                        # Still open, continue waiting
+                        pass
+                    else:
+                        console.print(f"[yellow]Unknown PR state: {pr_out}[/yellow]")
+                        
+                except sh.ErrorReturnCode:
+                    # PR might not exist anymore (could mean it was merged and branch deleted)
+                    # Try to check if the branch was merged by checking git log
+                    try:
+                        sh.bash(
+                            "-lc",
+                            f"gh api repos/{repo}/git/refs/heads/dns-setup-{domain}",
+                            _out=lambda x: None
+                        )
+                        # Branch still exists, so PR wasn't merged
+                        pass
+                    except sh.ErrorReturnCode:
+                        # Branch deleted, likely means PR was merged
+                        progress.update(task, completed=True)
+                        console.print(f"[green]✓[/green] PR #{pr_number} appears to have been merged (branch deleted)!")
+                        return True
                 
                 time.sleep(5)  # Check every 5 seconds
             except sh.ErrorReturnCode as e:
