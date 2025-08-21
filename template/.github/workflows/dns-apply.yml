@@ -18,8 +18,8 @@ jobs:
     uses: ${{ vars.VPS_MANAGER_REPO || 'YOUR_GITHUB_USERNAME/vps-manager' }}/.github/workflows/dns-apply.yml@main
     with:
       # Update these values for your domain (must match dns-plan.yml)
-      zone: myapp.example.com  # Your domain
-      provider: cloudflare     # Your DNS provider
+      zone: ${{ vars.APP_DOMAIN }}  # Your domain
+      provider: ${{ vars.DNS_PROVIDER }}     # Your DNS provider
     secrets:
       # Make sure DNS_PROVIDER_TOKEN secret is set in your repo settings
       PROVIDER_TOKEN: ${{ secrets.DNS_PROVIDER_TOKEN }}

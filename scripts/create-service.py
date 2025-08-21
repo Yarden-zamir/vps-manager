@@ -577,7 +577,7 @@ api:
             return ""
 
 
-def wait_for_pr_merge(pr_url: str, repo: str) -> bool:
+def wait_for_pr_merge(pr_url: str, repo: str, domain: str) -> bool:
     """Wait for PR to be merged. Returns True if merged, False if closed/cancelled."""
     import time
     import re
@@ -604,10 +604,7 @@ def wait_for_pr_merge(pr_url: str, repo: str) -> bool:
                 # Check if PR still exists and get its state
                 try:
                     # Use environment variables and sed to strip ANSI codes before jq
-                    pr_out = sh.bash(
-                        "-lc", 
-                        f"NO_COLOR=1 GH_NO_COLOR=1 gh pr view {pr_number} --json state --repo {repo} | sed 's/\x1b\[[0-9;]*m//g' | jq -r .state",
-                    ).strip()
+                    pr_out = sh.gh(f"pr view {pr_number} --json state --repo {repo} | jq -r .state").strip()
                     
                     if pr_out == "MERGED":
                         progress.update(task, completed=True)
@@ -663,9 +660,7 @@ def run_dns_apply(repo_name: str, domain: str, provider: str) -> bool:
         try:
             # Trigger the workflow
             output = sh.gh("workflow", "run", "dns-apply.yml", 
-                          "--repo", repo_name,
-                          "-f", f"zone={domain}",
-                          "-f", f"provider={provider}")
+                          "--repo", repo_name)
             progress.update(task, completed=True)
             
             console.print(f"[green]✓[/green] DNS apply workflow triggered successfully!")
@@ -827,7 +822,7 @@ def create_service(
     # Handle DNS workflow if configured
     if domain and pr_url:
         # Wait for PR to be merged
-        if wait_for_pr_merge(pr_url, vps_manager_repo):
+        if wait_for_pr_merge(pr_url, vps_manager_repo, domain):
             # Run DNS apply workflow
             if run_dns_apply(repo_name, domain, dns_provider.value):
                 console.print(f"\n[bold green]🎉 DNS configuration complete![/bold green]")
