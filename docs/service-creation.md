@@ -1,26 +1,32 @@
 # Service Creation Guide
 
-This guide explains how to create and deploy a new service to your VPS.
+This guide explains how to create and deploy a new service to your VPS using the unified service creator.
 
 ## Prerequisites
 
 - VPS set up with Docker and Traefik (see [Setup Guide](setup-guide.md))
+- SSH access to VPS as root
 - GitHub account
-- GitHub CLI installed (optional but recommended)
+- GitHub CLI (`gh`) installed and authenticated
+- Python with [uv](https://github.com/astral-sh/uv) installed
 - Local development environment
 
 ## Quick Start
 
-### Using the Creation Script
+### Using the Unified Creation Script
 
 ```bash
 # Set environment variables
 export VPS_HOST="your.vps.ip"
 export VPS_MANAGER_REPO="YOUR_GITHUB/vps-manager"
+export VPS_MANAGER_PATH="/path/to/vps-manager"  # For DNS config
 
-# Source and run the script (requires root SSH access)
-source <(curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB/vps-manager/main/scripts/create-service.sh)
-create-service myapp myapp.example.com
+# Create service with domain and DNS
+./vps-manager/scripts/create-service.py \
+  --service-name myapp \
+  --local-path ./myapp \
+  --domain myapp.example.com \
+  --dns-provider cloudflare
 
 # IMPORTANT: Save the generated password that will be displayed!
 ```
@@ -28,8 +34,10 @@ create-service myapp myapp.example.com
 The script will:
 1. Create a service user (svc-myapp) with a secure password
 2. Set up directories with proper ownership
-3. Configure GitHub repo and secrets
-4. Display credentials for your records
+3. Download and customize the template
+4. Configure GitHub repo and secrets
+5. Create DNS configuration (if domain specified)
+6. Display credentials and next steps
 
 ## Manual Service Creation
 
@@ -80,6 +88,8 @@ Replace the template code in `src/` with your application.
 
 ### Step 3: Create GitHub Repository
 
+**Note**: The unified script handles this automatically!
+
 ```bash
 # Using GitHub CLI
 gh repo create myapp --private --source=. --remote=origin
@@ -93,17 +103,15 @@ git push -u origin main
 
 ### Step 4: Configure GitHub Secrets
 
-#### Using GitHub CLI:
+**Note**: The unified script sets up VPS-related secrets automatically!
+
+#### For DNS (if using):
 ```bash
-# Secrets (sensitive data)
-gh secret set VPS_HOST -b "your.vps.ip"
-gh secret set VPS_USER -b "svc-myapp"
-gh secret set VPS_PASSWORD -b "generated-password-here"
+gh secret set DNS_PROVIDER_TOKEN  # Enter token when prompted
+```
 
-# Variables (non-sensitive config)
-gh variable set APP_DOMAIN -b "myapp.example.com"
-gh variable set APP_PORT -b "3000"
-
+#### For app-specific secrets:
+```bash
 # App-specific secrets
 gh secret set DATABASE_URL -b "postgresql://user:password@db:5432/myapp"
 gh secret set API_KEY -b "your-secret-api-key"
@@ -141,13 +149,21 @@ Note: The create-service script does this automatically!
 
 ### Step 6: Configure DNS
 
-Each service needs its own domain configured. Point your service's domain to your VPS:
-- Type: A record
+DNS configuration is now integrated into service creation!
+
+#### If you used the unified script with `--domain`:
+1. DNS configuration was created automatically
+2. Review and merge the PR in vps-manager repo
+3. Run DNS apply workflow: `gh workflow run dns-apply.yml`
+
+#### Manual DNS setup:
+Point your service's domain to your VPS:
+- Type: A record  
 - Name: myapp (or @ for root domain)
 - Value: YOUR_VPS_IP
 - TTL: 300 (5 minutes)
 
-**Note**: There's no global domain configuration. Each service manages its own domain through its docker-compose.yml labels. This allows complete flexibility - you can use different domains, subdomains, or even different domain providers for each service.
+See [DNS Management Guide](dns-management.md) for centralized DNS management.
 
 ### Step 7: Deploy
 

@@ -1,0 +1,20 @@
+# OctoDNS configuration file
+# This file configures OctoDNS behavior and references the provider and zone configurations
+
+manager:
+  # Maximum number of workers for parallel processing
+  max_workers: 2
+
+# Providers are configured dynamically based on zones-meta files
+# We'll inject these at runtime based on which zones are being processed
+
+# Sources - where records come from (our YAML files)
+sources:
+  config:
+    class: octodns_config.YamlProvider
+    directory: ./zones
+    enforce_order: true
+
+# Default TTL if not specified in records
+defaults:
+  ttl: 300

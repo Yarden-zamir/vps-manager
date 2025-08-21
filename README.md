@@ -30,12 +30,19 @@ A lightweight, Docker-based approach to deploying web applications and services 
    # Set required environment variables
    export VPS_HOST="your.vps.ip"
    export VPS_MANAGER_REPO="YOUR_GITHUB_USERNAME/vps-manager"
+   export DNS_PROVIDER_TOKEN="your-api-token"  # Required for DNS setup
    
-   # Source and run the creation script
-   source <(curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/create-service.sh)
-   create-service myapp myapp.com
+   # Run the service creator (requires Python with uv)
+   # Option 1: If you have vps-manager cloned locally
+   /path/to/vps-manager/scripts/create-service.py myapp ./myapp \
+     --domain myapp.com --dns-provider cloudflare
    
-   # This will create a service user with password and configure everything
+   # Option 2: Download and run
+   curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/create-service.py -o create-service.py
+   chmod +x create-service.py
+   ./create-service.py myapp ./myapp --domain myapp.com --dns-provider cloudflare
+   
+   # The script will handle everything including DNS configuration!
    ```
 
 3. **Deploy** by pushing to main branch - GitHub Actions handles the rest!
@@ -136,6 +143,7 @@ docker logs traefik
 
 - [Setup Guide](docs/setup-guide.md) - VPS bootstrap instructions
 - [Service Creation](docs/service-creation.md) - How to create services
+- [DNS Management](docs/dns-management.md) - Centralized DNS with OctoDNS
 - [Troubleshooting](docs/troubleshooting.md) - Common issues
 
 ## ⚠️ Limitations

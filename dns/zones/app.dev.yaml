@@ -1,0 +1,33 @@
+# DNS records for app.dev
+# Example using Netlify DNS
+
+# Root domain
+'':
+  type: A
+  value: 192.0.2.1
+
+# Development environment
+dev:
+  type: A
+  value: 192.0.2.1
+
+# Staging environment
+staging:
+  type: A
+  value: 192.0.2.1
+
+# Feature branch deployments
+feature-auth:
+  type: A
+  value: 192.0.2.1
+  ttl: 300 # Lower TTL for temporary branches
+
+# API endpoint
+api:
+  type: A
+  value: 192.0.2.1
+
+# Wildcard for dynamic subdomains
+'*':
+  type: A
+  value: 192.0.2.1

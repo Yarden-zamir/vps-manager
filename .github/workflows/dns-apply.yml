@@ -1,0 +1,181 @@
+name: DNS Apply
+
+on:
+  workflow_call:
+    inputs:
+      zone:
+        description: 'DNS zone to apply changes for (e.g., example.com)'
+        required: true
+        type: string
+      provider:
+        description: 'DNS provider name (cloudflare, netlify, digitalocean, dnsimple, linode)'
+        required: true
+        type: string
+    secrets:
+      PROVIDER_TOKEN:
+        description: 'API token for the DNS provider'
+        required: true
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python with uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "0.4.29"
+      
+      - name: Install dependencies
+        run: |
+          cd dns
+          uv venv
+          uv pip install -e .
+      
+      - name: Validate zone configuration
+        run: |
+          if [ ! -f "dns/zones/${{ inputs.zone }}.yaml" ]; then
+            echo "❌ Zone configuration not found: dns/zones/${{ inputs.zone }}.yaml"
+            echo ""
+            echo "To set up DNS for this zone, create: dns/zones/${{ inputs.zone }}.yaml"
+            echo "See dns/zones/example.com.yaml for an example."
+            exit 1
+          fi
+      
+      - name: Create dynamic OctoDNS config
+        run: |
+          cd dns
+          cat > octodns-config.yaml << EOF
+          manager:
+            max_workers: 1
+            
+          providers:
+            config:
+              class: octodns_config.YamlProvider
+              directory: ./zones
+              enforce_order: true
+              
+            ${{ inputs.provider }}:
+          EOF
+          
+          # Add provider-specific configuration
+          case "${{ inputs.provider }}" in
+            cloudflare)
+              cat >> octodns-config.yaml << EOF
+              class: octodns_cloudflare.CloudflareProvider
+              token: env/CLOUDFLARE_TOKEN
+          EOF
+              export CLOUDFLARE_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
+              ;;
+            netlify)
+              cat >> octodns-config.yaml << EOF
+              class: octodns_netlify.NetlifyProvider
+              token: env/NETLIFY_TOKEN
+          EOF
+              export NETLIFY_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
+              ;;
+            digitalocean)
+              cat >> octodns-config.yaml << EOF
+              class: octodns_digitalocean.DigitalOceanProvider
+              token: env/DIGITALOCEAN_TOKEN
+          EOF
+              export DIGITALOCEAN_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
+              ;;
+            dnsimple)
+              cat >> octodns-config.yaml << EOF
+              class: octodns_dnsimple.DnsimpleProvider
+              token: env/DNSIMPLE_TOKEN
+              account: env/DNSIMPLE_ACCOUNT
+          EOF
+              export DNSIMPLE_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
+              # Account ID should be part of the token format: "account_id:token"
+              export DNSIMPLE_ACCOUNT=$(echo "${{ secrets.PROVIDER_TOKEN }}" | cut -d: -f1)
+              export DNSIMPLE_TOKEN=$(echo "${{ secrets.PROVIDER_TOKEN }}" | cut -d: -f2)
+              ;;
+            linode)
+              cat >> octodns-config.yaml << EOF
+              class: octodns_linode.LinodeProvider
+              token: env/LINODE_TOKEN
+          EOF
+              export LINODE_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
+              ;;
+          esac
+          
+          # Add zone configuration
+          cat >> octodns-config.yaml << EOF
+          
+          zones:
+            ${{ inputs.zone }}:
+              sources:
+                - config
+              targets:
+                - ${{ inputs.provider }}
+          EOF
+      
+      - name: Run OctoDNS apply
+        id: apply
+        run: |
+          cd dns
+          source .venv/bin/activate
+          
+          # First run a dry-run to show what will change
+          echo "### Pre-apply Plan" > apply-summary.md
+          echo '```' >> apply-summary.md
+          octodns-sync --config-file octodns-config.yaml --dry-run 2>&1 | tee plan.log
+          cat plan.log >> apply-summary.md
+          echo '```' >> apply-summary.md
+          echo "" >> apply-summary.md
+          
+          # Check if there are changes
+          if grep -q "No changes" plan.log; then
+            echo "✅ **No changes to apply**" >> apply-summary.md
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            # Apply the changes
+            echo "### Applying Changes" >> apply-summary.md
+            echo '```' >> apply-summary.md
+            octodns-sync --config-file octodns-config.yaml --doit 2>&1 | tee apply.log
+            cat apply.log >> apply-summary.md
+            echo '```' >> apply-summary.md
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            
+            # Check if apply was successful
+            if [ $? -eq 0 ]; then
+              echo "" >> apply-summary.md
+              echo "✅ **DNS changes applied successfully!**" >> apply-summary.md
+            else
+              echo "" >> apply-summary.md
+              echo "❌ **DNS apply failed!**" >> apply-summary.md
+              exit 1
+            fi
+          fi
+      
+      - name: Create summary
+        run: |
+          echo "## DNS Apply Results for ${{ inputs.zone }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Provider: **${{ inputs.provider }}**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cat dns/apply-summary.md >> $GITHUB_STEP_SUMMARY
+      
+      - name: Create issue comment on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('dns/apply-summary.md', 'utf8');
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `DNS Apply Failed for ${context.payload.inputs.zone}`,
+              body: `## DNS Apply Failed\n\nZone: **${context.payload.inputs.zone}**\nProvider: **${context.payload.inputs.provider}**\n\n${summary}`,
+              labels: ['dns', 'error']
+            });

@@ -1,6 +1,6 @@
 # VPS Manager - Repository Summary
 
-This repository provides a complete solution for managing Docker-based deployments on a VPS with minimal complexity.
+This repository provides a complete solution for managing Docker-based deployments on a VPS with minimal complexity and integrated DNS management.
 
 ## What Was Created
 
@@ -10,6 +10,9 @@ This repository provides a complete solution for managing Docker-based deploymen
 - **docs/service-creation.md** - Detailed guide for creating new services
 - **docs/troubleshooting.md** - Common issues and solutions
 - **docs/traefik-routing.md** - How Traefik routes and labels expose services over HTTPS
+- **docs/dns-management.md** - Centralized DNS management with OctoDNS
+- **docs/quick-start-dns.md** - Quick start guide for services with DNS
+- **docs/unified-service-creation.md** - Guide for the unified Python service creator
 
 ### 🛠️ Scripts
 - **scripts/bootstrap.sh** - Automated VPS setup script that:
@@ -19,13 +22,15 @@ This repository provides a complete solution for managing Docker-based deploymen
   - Configures firewall
   - Creates directory structure
   
-- **scripts/create-service.sh** - Service creation helper that:
+- **scripts/create-service.py** - Unified service creator (Python/Typer) that:
   - Creates service-specific Unix user with password
-  - Downloads template
-  - Customizes for your service
-  - Creates GitHub repo (if gh CLI available)
-  - Sets up GitHub secrets (including password)
-  - Creates VPS directories with proper ownership
+  - Downloads and customizes template
+  - Sets up GitHub repo and secrets
+  - Creates DNS configuration (if domain specified)
+  - Configures DNS workflows automatically
+  - Rich terminal UI with progress indicators
+  - Shell completion support
+  - Built with Typer and sh for reliability
 
 ### 📦 Template
 Complete service template including:
@@ -39,6 +44,8 @@ Complete service template including:
 - **src/index.js** - Basic Express server with required `/health` endpoint
 - **package.json** - Node.js dependencies
 - **README.md** - Service-specific documentation
+- **.github/workflows/dns-plan.yml** - DNS planning workflow
+- **.github/workflows/dns-apply.yml** - DNS apply workflow
 
 ### 🔄 Traefik Configuration
 - **traefik/docker-compose.yml** - Traefik container setup
@@ -50,6 +57,14 @@ Complete service template including:
   - Rate limiting
   - Security headers
   - Advanced routing patterns
+
+### 🌐 DNS Management
+- **dns/zones/** - DNS record configurations (YAML)
+- **dns/zones-meta/** - Provider metadata for each zone
+- **dns/pyproject.toml** - OctoDNS and provider dependencies
+- **dns/config.yaml** - Base OctoDNS configuration
+- **.github/workflows/dns-plan.yml** - Reusable workflow for DNS planning
+- **.github/workflows/dns-apply.yml** - Reusable workflow for applying DNS changes
 
 ## Usage Flow
 
@@ -75,11 +90,13 @@ Complete service template including:
    export VPS_MANAGER_REPO="$GITHUB_USERNAME/vps-manager"
    export VPS_HOST="your.vps.ip"
    
-   # Source and run (requires root SSH access to VPS)
-   source <(curl -sSL https://raw.githubusercontent.com/$GITHUB_USERNAME/vps-manager/main/scripts/create-service.sh)
-   create-service myapp myapp.example.com
+   # Run the unified service creator (requires Python with uv)
+   ./path/to/vps-manager/scripts/create-service.py \
+     myapp ./myapp \
+     --domain myapp.example.com \
+     --dns-provider cloudflare
    
-   # Save the generated password for deployment!
+   # Save the generated password and follow the instructions!
    ```
 
 3. **Deploy**: Push to main branch → GitHub Action deploys automatically
@@ -92,6 +109,8 @@ Complete service template including:
 ✅ **Flexible**: Any language/framework that runs in Docker
 ✅ **Observable**: Health checks, structured logs, metrics
 ✅ **Maintainable**: Git-based deployments, easy rollbacks
+✅ **DNS Control**: Centralized config with decentralized ownership
+✅ **Multi-Provider**: Support for Cloudflare, Netlify, DigitalOcean, etc.
 
 ## Next Steps
 

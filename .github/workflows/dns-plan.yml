@@ -1,0 +1,190 @@
+name: DNS Plan
+
+on:
+  workflow_call:
+    inputs:
+      zone:
+        description: 'DNS zone to plan changes for (e.g., example.com)'
+        required: true
+        type: string
+      provider:
+        description: 'DNS provider name (cloudflare, netlify, digitalocean, dnsimple, linode)'
+        required: true
+        type: string
+    secrets:
+      PROVIDER_TOKEN:
+        description: 'API token for the DNS provider'
+        required: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python with uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "0.4.29"
+      
+      - name: Install dependencies
+        run: |
+          cd dns
+          uv venv
+          uv pip install -e .
+      
+      - name: Validate zone configuration
+        run: |
+          if [ ! -f "dns/zones/${{ inputs.zone }}.yaml" ]; then
+            echo "❌ Zone configuration not found: dns/zones/${{ inputs.zone }}.yaml"
+            echo ""
+            echo "To set up DNS for this zone, create: dns/zones/${{ inputs.zone }}.yaml"
+            echo "See dns/zones/example.com.yaml for an example."
+            exit 1
+          fi
+      
+      - name: Create dynamic OctoDNS config
+        run: |
+          cd dns
+          cat > octodns-config.yaml << EOF
+          manager:
+            max_workers: 1
+            
+          providers:
+            config:
+              class: octodns_config.YamlProvider
+              directory: ./zones
+              enforce_order: true
+              
+            ${{ inputs.provider }}:
+          EOF
+          
+          # Add provider-specific configuration
+          case "${{ inputs.provider }}" in
+            cloudflare)
+              cat >> octodns-config.yaml << EOF
+              class: octodns_cloudflare.CloudflareProvider
+              token: env/CLOUDFLARE_TOKEN
+          EOF
+              export CLOUDFLARE_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
+              ;;
+            netlify)
+              cat >> octodns-config.yaml << EOF
+              class: octodns_netlify.NetlifyProvider
+              token: env/NETLIFY_TOKEN
+          EOF
+              export NETLIFY_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
+              ;;
+            digitalocean)
+              cat >> octodns-config.yaml << EOF
+              class: octodns_digitalocean.DigitalOceanProvider
+              token: env/DIGITALOCEAN_TOKEN
+          EOF
+              export DIGITALOCEAN_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
+              ;;
+            dnsimple)
+              cat >> octodns-config.yaml << EOF
+              class: octodns_dnsimple.DnsimpleProvider
+              token: env/DNSIMPLE_TOKEN
+              account: env/DNSIMPLE_ACCOUNT
+          EOF
+              export DNSIMPLE_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
+              # Account ID should be part of the token format: "account_id:token"
+              export DNSIMPLE_ACCOUNT=$(echo "${{ secrets.PROVIDER_TOKEN }}" | cut -d: -f1)
+              export DNSIMPLE_TOKEN=$(echo "${{ secrets.PROVIDER_TOKEN }}" | cut -d: -f2)
+              ;;
+            linode)
+              cat >> octodns-config.yaml << EOF
+              class: octodns_linode.LinodeProvider
+              token: env/LINODE_TOKEN
+          EOF
+              export LINODE_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
+              ;;
+          esac
+          
+          # Add zone configuration
+          cat >> octodns-config.yaml << EOF
+          
+          zones:
+            ${{ inputs.zone }}:
+              sources:
+                - config
+              targets:
+                - ${{ inputs.provider }}
+          EOF
+      
+      - name: Run OctoDNS plan
+        id: plan
+        run: |
+          cd dns
+          source .venv/bin/activate
+          
+          # Run plan and capture output
+          octodns-sync --config-file octodns-config.yaml --plan-output-dir plan-output --dry-run 2>&1 | tee plan.log
+          
+          # Format the plan output
+          echo "## DNS Plan for ${{ inputs.zone }}" > plan-summary.md
+          echo "" >> plan-summary.md
+          echo "Provider: **${{ inputs.provider }}**" >> plan-summary.md
+          echo "" >> plan-summary.md
+          
+          if grep -q "No changes" plan.log; then
+            echo "✅ **No changes required**" >> plan-summary.md
+          else
+            echo "### Planned Changes:" >> plan-summary.md
+            echo '```' >> plan-summary.md
+            cat plan.log | grep -E "(Create|Update|Delete|^[+-])" >> plan-summary.md || true
+            echo '```' >> plan-summary.md
+          fi
+          
+          # Set output for PR comment
+          echo "has_changes=$(grep -q 'No changes' plan.log && echo 'false' || echo 'true')" >> $GITHUB_OUTPUT
+      
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const planSummary = fs.readFileSync('dns/plan-summary.md', 'utf8');
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('## DNS Plan for ${{ inputs.zone }}')
+            );
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: planSummary
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: planSummary
+              });
+            }
+      
+      - name: Upload plan output
+        if: steps.plan.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dns-plan-${{ inputs.zone }}
+          path: dns/plan-output/
+          retention-days: 7

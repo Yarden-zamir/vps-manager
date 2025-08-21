@@ -1,0 +1,21 @@
+[project]
+name = "vps-dns-manager"
+version = "0.1.0"
+description = "DNS management for VPS services using OctoDNS"
+requires-python = ">=3.9"
+
+dependencies = [
+    "octodns>=1.4.0",
+    "octodns-cloudflare>=0.0.1",
+    "octodns-netlify>=0.0.1",
+    "octodns-digitalocean>=0.0.1",
+    "octodns-dnsimple>=0.0.1",
+    "octodns-linode>=0.0.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = []

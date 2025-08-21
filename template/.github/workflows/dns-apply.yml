@@ -1,0 +1,25 @@
+name: DNS Apply
+
+# This workflow applies DNS changes after they're merged to main
+# Make sure to review the plan before merging!
+
+on:
+  # Auto-run when DNS workflows are updated on main
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/dns-*.yml'
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  apply:
+    # Call the reusable workflow from vps-manager
+    uses: ${{ vars.VPS_MANAGER_REPO || 'YOUR_GITHUB_USERNAME/vps-manager' }}/.github/workflows/dns-apply.yml@main
+    with:
+      # Update these values for your domain (must match dns-plan.yml)
+      zone: myapp.example.com  # Your domain
+      provider: cloudflare     # Your DNS provider
+    secrets:
+      # Make sure DNS_PROVIDER_TOKEN secret is set in your repo settings
+      PROVIDER_TOKEN: ${{ secrets.DNS_PROVIDER_TOKEN }}

@@ -1,0 +1,42 @@
+# DNS records for example.com
+# This is a sample configuration showing various record types
+
+# Root domain A record pointing to VPS
+'':
+  type: A
+  value: 192.0.2.1  # Replace with your VPS IP
+
+# WWW subdomain
+www:
+  type: CNAME
+  value: example.com.
+
+# Service subdomains (automatically managed by services)
+app1:
+  type: A
+  value: 192.0.2.1
+
+app2:
+  type: A
+  value: 192.0.2.1
+
+# Mail records
+'':
+  type: MX
+  values:
+    - priority: 10
+      value: mail.example.com.
+
+mail:
+  type: A
+  value: 192.0.2.2
+
+# TXT records
+'':
+  type: TXT
+  values:
+    - '"v=spf1 a mx ~all"'
+    - '"google-site-verification=example123"'
+
+# Service-specific subdomains can be added here
+# api.example.com, staging.example.com, etc.
