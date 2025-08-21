@@ -25,6 +25,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          repository: yarden-zamir/vps-manager
       
       - name: Set up Python with uv
         uses: astral-sh/setup-uv@v2
