@@ -15,7 +15,7 @@ on:
 jobs:
   apply:
     # Call the reusable workflow from vps-manager
-    uses: ${{ vars.VPS_MANAGER_REPO || 'YOUR_GITHUB_USERNAME/vps-manager' }}/.github/workflows/dns-apply.yml@main
+    uses: yarden-zamir/vps-manager/.github/workflows/dns-apply.yml@main
     with:
       # Update these values for your domain (must match dns-plan.yml)
       zone: ${{ vars.APP_DOMAIN }}  # Your domain
