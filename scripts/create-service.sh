@@ -72,14 +72,24 @@ create-service() {
     # Parse options
     local REPO_NAME=""
     local LOCAL_PATH=""
+    local SERVICE_NAME=""
+    local APP_DOMAIN=""
     while [[ "$1" == --* ]]; do
         case "$1" in
-            --repo|-r)
+            --repo)
                 REPO_NAME="$2"
                 shift 2
                 ;;
-            --local-path|-p)
+            --local-path)
                 LOCAL_PATH="$2"
+                shift 2
+                ;;
+            --service-name)
+                SERVICE_NAME="$2"
+                shift 2
+                ;;
+            --domain)
+                APP_DOMAIN="$2"
                 shift 2
                 ;;
             *)
@@ -89,8 +99,11 @@ create-service() {
         esac
     done
 
-    local SERVICE_NAME=$1
-    local APP_DOMAIN=$2
+    # Do not allow positional arguments
+    if [ -n "$1" ]; then
+        print_error "Unexpected positional arguments: $*"
+        return 1
+    fi
     
     # Require GitHub CLI
     if ! command -v gh &> /dev/null; then
@@ -99,13 +112,14 @@ create-service() {
     fi
     
     if [ -z "$SERVICE_NAME" ]; then
-        print_error "Usage: create-service --local-path <path> <service-name> [domain]"
+        print_error "Error: --service-name is required"
+        echo "Usage: create-service --local-path <path> --service-name <name> [--domain <domain>] [--repo <owner/name>]"
         return 1
     fi
     
     if [ -z "$LOCAL_PATH" ]; then
         print_error "Error: --local-path is required"
-        echo "Usage: create-service --local-path <path> <service-name> [domain]"
+        echo "Usage: create-service --local-path <path> --service-name <name> [--domain <domain>] [--repo <owner/name>]"
         return 1
     fi
     
@@ -356,14 +370,24 @@ ENDSSH
     echo ""
     echo "✅ Service $SERVICE_NAME created successfully!"
     echo ""
+    echo "Relevant links:"
+    echo "--------------------------------"
+    echo "https://github.com/$REPO_NAME"
+    echo "https://github.com/$REPO_NAME/actions"
+    if [ -n "$APP_DOMAIN" ]; then
+        echo "https://$APP_DOMAIN"
+    fi
+    echo "$(realpath $WORK_DIR)"
+    echo "--------------------------------"
     echo "Next steps:"
-    echo "1. Update your application code in src/"
+    echo "1. Update your application code in src/ and make sure dockerfile is correct to your needs"
     if [ -n "$APP_DOMAIN" ]; then
         echo "2. Configure DNS to point $APP_DOMAIN to $VPS_HOST"
     else
         echo "2. Configure your domain when ready"
     fi
     echo "3. Push to main branch to deploy"
+
 }
 
 # Note: Functions cannot be exported in zsh, but they're available after sourcing
@@ -374,7 +398,7 @@ if [ "$SOURCED" -eq 0 ]; then
     echo ""
     echo "Usage:"
     echo "  source $0"
-    echo "  create-service --local-path <path> [--repo <owner/name>] <service-name> [domain]"
+    echo "  create-service --local-path <path> --service-name <name> [--domain <domain>] [--repo <owner/name>]"
     echo ""
     echo "This script will:"
     echo "  - Create a service-specific user on the VPS"
@@ -391,13 +415,14 @@ if [ "$SOURCED" -eq 0 ]; then
     echo "  - SSH access as root to your VPS host"
     echo ""
     echo "Required options:"
-    echo "  --local-path|-p <path>  Path to the local directory for your service"
+    echo "  --local-path <path>     Path to the local directory for your service"
     echo "                          This is where template files will be created"
     echo "                          and where your service code will live"
+    echo "  --service-name <name>   Name of the service (used for user/repo names)"
     echo ""
     echo "Optional options:"
-    echo "  --repo|-r <owner/name>  Specify GitHub repo (auto-detected if omitted)"
-    echo "  domain                  Domain for your service (can be added later)"
+    echo "  --domain <domain>       Domain for your service (can be added later)"
+    echo "  --repo <owner/name>     Specify GitHub repo (auto-detected if omitted)"
     echo ""
     echo "Note: Run this with SSH access to root@VPS_HOST"
 fi
