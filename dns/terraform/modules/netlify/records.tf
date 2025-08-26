@@ -19,18 +19,9 @@ variable "records" {
   default = []
 }
 
-data "netlify_dns_zone" "by_name" {
-  for_each = { for z in distinct([for r in var.records : r.zone]) : z => z }
-  name     = each.key
-}
-
 locals {
-  # Build a map of zone name to zone id
-  zone_name_to_id = { for k, z in data.netlify_dns_zone.by_name : k => z.id }
-
   prepared = [
     for r in var.records : {
-      zone_id = lookup(local.zone_name_to_id, r.zone, null)
       zone    = r.zone
       name    = r.name
       type    = upper(r.type)
@@ -53,7 +44,7 @@ resource "netlify_dns_record" "this" {
     ]) : rec.key => rec
   }
 
-  zone_id  = each.value.zone_id
+  domain   = each.value.zone
   hostname = each.value.name
   type     = each.value.type
   value    = each.value.value
