@@ -42,10 +42,10 @@ resource "linode_domain_record" "this" {
   }
 
   domain_id = lookup(local.zone_name_to_id, each.value.zone)
-  name      = each.value.name
-  type      = each.value.type
-  target    = each.value.value
-  ttl_sec   = coalesce(try(each.value.ttl, null), 0)
+  name        = each.value.name
+  record_type = each.value.type
+  target      = each.value.value
+  ttl_sec     = coalesce(try(each.value.ttl, null), 0)
 }
 
 output "applied" {

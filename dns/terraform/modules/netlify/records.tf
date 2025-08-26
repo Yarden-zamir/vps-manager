@@ -19,11 +19,14 @@ variable "records" {
   default = []
 }
 
-data "netlify_dns_zones" "all" {}
+data "netlify_dns_zone" "by_name" {
+  for_each = { for z in distinct([for r in var.records : r.zone]) : z => z }
+  name     = each.key
+}
 
 locals {
   # Build a map of zone name to zone id
-  zone_name_to_id = { for z in data.netlify_dns_zones.all.zones : z.name => z.id }
+  zone_name_to_id = { for k, z in data.netlify_dns_zone.by_name : k => z.id }
 
   prepared = [
     for r in var.records : {

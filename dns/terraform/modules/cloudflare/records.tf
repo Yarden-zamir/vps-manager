@@ -19,9 +19,14 @@ variable "records" {
   default = []
 }
 
-data "cloudflare_zone" "this" {
-  for_each = { for z in distinct([for r in var.records : r.zone]) : z => z }
-  name     = each.key
+data "cloudflare_zones" "by_name" {
+  filter {
+    name = "*"
+  }
+}
+
+locals {
+  cf_zone_name_to_id = { for z in data.cloudflare_zones.by_name.zones : z.name => z.id }
 }
 
 resource "cloudflare_record" "this" {
@@ -40,7 +45,7 @@ resource "cloudflare_record" "this" {
     ]) : rec.key => rec
   }
 
-  zone_id = data.cloudflare_zone.this[each.value.zone].id
+  zone_id = lookup(local.cf_zone_name_to_id, each.value.zone)
   name    = each.value.name == "" ? "@" : each.value.name
   type    = each.value.type
   value   = each.value.value
