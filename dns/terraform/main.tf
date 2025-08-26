@@ -34,17 +34,7 @@ module "netlify" {
   records = local.netlify_records
 }
 
-module "cloudflare" {
-  count = 0
-}
 
-module "digitalocean" {
-  count = 0
-}
-
-module "linode" {
-  count = 0
-}
 
 variable "dns_provider_token" {
   description = "Generic DNS provider token (used for Netlify token)"
