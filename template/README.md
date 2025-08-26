@@ -25,27 +25,24 @@ Set these in your repository settings under Secrets and Variables > Actions:
 
 ## DNS Management
 
-This service can manage its own DNS records through the central VPS manager configuration.
+DNS is managed via reusable Terraform workflows from `vps-manager`.
 
 ### Initial Setup
 
-1. **Add your domain configuration** to the vps-manager repo:
-   - Create `dns/zones/yourdomain.com.yaml` with your DNS records
-   - Create `dns/zones-meta/yourdomain.com.yaml` with provider info
+1. **Set provider token** in this repo:
+   - Settings → Secrets and variables → Actions → Secrets
+   - Add `DNS_PROVIDER_TOKEN` with your provider API token
 
-2. **Set up your DNS provider token**:
-   - Go to Settings → Secrets → Actions in this repo
-   - Add `DNS_PROVIDER_TOKEN` secret with your provider's API token
+2. **Define records** in `infra/dns-records.json`
 
-3. **Update the DNS workflows** in `.github/workflows/`:
-   - Edit `dns-plan.yml` and `dns-apply.yml`
-   - Set your domain and provider
+3. **Use the DNS workflow** in `.github/workflows/dns.yml`
+   - It calls `vps-manager/.github/workflows/dns-plan.yml` (PR) and `dns-apply.yml` (push)
+   - Set `dns_provider` (netlify|cloudflare|digitalocean|linode)
 
 ### Making DNS Changes
 
-1. Create a PR in vps-manager to modify your zone file
-2. Review the DNS plan in the PR checks
-3. After merge, run the DNS Apply workflow in this repo
+1. Edit `infra/dns-records.json` and open a PR (plan runs)
+2. Merge to main to apply (apply runs)
 
 ## Customization
 

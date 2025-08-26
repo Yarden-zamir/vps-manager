@@ -16,6 +16,10 @@ on:
         description: "Path in caller repo to a JSON file containing { records: [...] }"
         required: false
         type: string
+      dns_provider:
+        description: "DNS provider to target (netlify|cloudflare|digitalocean|linode)"
+        required: true
+        type: string
       state_path:
         description: "Path in caller repo to store terraform state"
         required: false
@@ -64,12 +68,14 @@ jobs:
 
       - name: Terraform Init
         env:
+          TF_VAR_dns_provider: ${{ inputs.dns_provider }}
           TF_VAR_dns_provider_token: ${{ secrets.DNS_PROVIDER_TOKEN }}
         run: |
           terraform -chdir=vps-manager/dns/terraform init -input=false -reconfigure -backend-config="path=${{ github.workspace }}/${{ inputs.state_path }}"
 
       - name: Terraform Apply
         env:
+          TF_VAR_dns_provider: ${{ inputs.dns_provider }}
           TF_VAR_dns_provider_token: ${{ secrets.DNS_PROVIDER_TOKEN }}
         run: |
           terraform -chdir=vps-manager/dns/terraform apply -input=false -auto-approve -no-color
