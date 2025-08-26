@@ -70,6 +70,7 @@ jobs:
         env:
           TF_VAR_dns_provider: ${{ inputs.dns_provider }}
           TF_VAR_dns_provider_token: ${{ secrets.DNS_PROVIDER_TOKEN }}
+          TF_VAR_netlify_team_slug: ${{ vars.NETLIFY_TEAM_SLUG }}
         run: |
           terraform -chdir=vps-manager/dns/terraform/netlify init -input=false -reconfigure -backend-config="path=${{ github.workspace }}/${{ inputs.state_path }}"
 
@@ -77,5 +78,6 @@ jobs:
         env:
           TF_VAR_dns_provider: ${{ inputs.dns_provider }}
           TF_VAR_dns_provider_token: ${{ secrets.DNS_PROVIDER_TOKEN }}
+          TF_VAR_netlify_team_slug: ${{ vars.NETLIFY_TEAM_SLUG }}
         run: |
           terraform -chdir=vps-manager/dns/terraform/netlify apply -input=false -auto-approve -no-color
