@@ -2,7 +2,7 @@ terraform {
   required_providers {
     netlify = {
       source  = "netlify/netlify"
-      version = ">= 1.0.0"
+      version = ">= 0.2.3"
     }
   }
 }

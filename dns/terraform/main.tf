@@ -3,19 +3,19 @@ terraform {
   required_providers {
     netlify = {
       source  = "netlify/netlify"
-      version = ">= 1.0.0"
+      version = ">= 0.2.3"
     }
     cloudflare = {
       source  = "cloudflare/cloudflare"
-      version = ">= 4.0.0"
+      version = ">= 5.8.4"
     }
     digitalocean = {
       source  = "digitalocean/digitalocean"
-      version = ">= 2.0.0"
+      version = ">= 2.66.0"
     }
     linode = {
       source  = "linode/linode"
-      version = ">= 2.0.0"
+      version = ">= 3.1.1"
     }
   }
   backend "local" {
