@@ -19,13 +19,13 @@ variable "records" {
   default = []
 }
 
-data "netlify_dns_zone" "zone" {
+resource "netlify_dns_zone" "zone" {
   for_each = { for z in distinct([for r in var.records : r.zone]) : z => z }
   name     = each.key
 }
 
 locals {
-  zone_id_by_name = { for k, z in data.netlify_dns_zone.zone : k => z.id }
+  zone_id_by_name = { for k, z in netlify_dns_zone.zone : k => z.id }
 }
 
 # Create records. Netlify requires one record per value; expand values.
