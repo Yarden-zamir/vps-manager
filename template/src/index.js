@@ -1,7 +1,7 @@
 const express = require('express');
 const app = express();
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.APP_PORT || process.env.PORT || 3000;
 const APP_NAME = process.env.APP_NAME || 'app';
 const COMMIT_SHA = process.env.COMMIT_SHA || 'unknown';
 

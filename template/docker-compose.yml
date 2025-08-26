@@ -18,7 +18,7 @@ services:
     volumes:
       - /persistent/${APP_NAME}/data:/app/data
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT}/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -48,7 +48,7 @@ services:
       - "traefik.http.middlewares.${APP_NAME}-redirect.redirectscheme.scheme=https"
       - "traefik.http.middlewares.${APP_NAME}-redirect.redirectscheme.permanent=true"
       # Service
-      - "traefik.http.services.${APP_NAME}.loadbalancer.server.port=3000"
+      - "traefik.http.services.${APP_NAME}.loadbalancer.server.port=${APP_PORT}"
 
 networks:
   app-network:

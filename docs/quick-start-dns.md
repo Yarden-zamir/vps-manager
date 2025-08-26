@@ -6,7 +6,7 @@ This guide shows how to create and deploy a service with automatic DNS configura
 
 - VPS already bootstrapped with `bootstrap.sh`
 - GitHub CLI (`gh`) installed and authenticated
-- DNS provider account (Cloudflare, Netlify, etc.)
+- DNS provider account (Netlify, Cloudflare, DigitalOcean, Linode)
 - Domain name you control
 
 ## 1. Create the Service
@@ -17,12 +17,12 @@ export VPS_MANAGER_REPO="yourname/vps-manager"
 export VPS_HOST="your.vps.ip"
 export VPS_MANAGER_PATH="$HOME/vps-manager"  # Path to your local vps-manager repo
 
-# Create service with domain and DNS provider
+# Create service (domain optional)
 ./vps-manager/scripts/create-service.py \
-  --service-name myapp \
-  --local-path ~/projects/myapp \
+  myapp \
+  ~/projects/myapp \
   --domain myapp.com \
-  --dns-provider cloudflare
+  --dns-provider netlify
 ```
 
 This automatically:
@@ -32,33 +32,28 @@ This automatically:
 - Creates DNS zone configuration
 - Prepares everything for deployment
 
-## 2. Set DNS Provider Token
+## 2. Set DNS Provider Token (generic)
 
 ```bash
 cd ~/projects/myapp
 
-# Add your DNS provider token
+# Add your DNS provider token (generic)
 gh secret set DNS_PROVIDER_TOKEN
 
-# For Cloudflare: Use API token with Zone:Read and DNS:Edit permissions
-# For Netlify: Use personal access token
-# For others: See docs/dns-management.md
+# Set provider in your DNS workflow as dns_provider=netlify|cloudflare|digitalocean|linode
 ```
 
-## 3. Review DNS Configuration
+## 3. Prepare DNS records JSON in your service repo
 
-The service creator already created your DNS configuration:
+Create (or update) `infra/dns-records.json` in your service repo:
 
-```bash
-cd ~/vps-manager
-# Review the DNS configuration that was created
-cat dns/zones/myapp.com.yaml
-
-# Push the DNS branch that was created
-git push -u origin dns-setup-myapp.com
-
-# Create a pull request
-gh pr create --title "Add DNS configuration for myapp.com"
+```json
+{
+  "records": [
+    {"zone": "myapp.com", "name": "", "type": "A", "values": ["YOUR_VPS_IP"]},
+    {"zone": "myapp.com", "name": "www", "type": "CNAME", "values": ["myapp.com."]}
+  ]
+}
 ```
 
 ## 4. Deploy Everything
@@ -72,8 +67,8 @@ git add .
 git commit -m "Initial deployment"
 git push
 
-# After DNS PR is merged in vps-manager, apply DNS
-gh workflow run dns-apply.yml
+# Trigger DNS apply in your service repo (example)
+gh workflow run dns.yml
 ```
 
 ## That's It! 🎉
@@ -104,10 +99,9 @@ git push  # Auto-deploys
 ```
 
 ### Update DNS
-1. Edit `dns/zones/myapp.com.yaml` in vps-manager
-2. Create PR and review changes
-3. Merge PR
-4. Run `gh workflow run dns-apply.yml` in service repo
+1. Edit `infra/dns-records.json` in your service repo
+2. Open PR to review plan
+3. Merge to main to apply
 
 ### Add Subdomain
 ```yaml

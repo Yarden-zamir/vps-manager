@@ -1,166 +1,75 @@
-name: DNS Apply
+name: DNS Apply (Terraform)
 
 on:
   workflow_call:
     inputs:
-      zone:
-        description: 'DNS zone to apply changes for (e.g., example.com)'
-        required: true
+      vps_manager_repo:
+        description: "Owner/Repo of vps-manager containing Terraform code"
+        required: false
         type: string
-      provider:
-        description: 'DNS provider name (cloudflare, netlify, digitalocean, dnsimple, linode)'
-        required: true
+        default: "kcw/vps-manager"
+      records_json:
+        description: "JSON string with { records: [...] } matching dns/terraform schema"
+        required: false
         type: string
+      records_path:
+        description: "Path in caller repo to a JSON file containing { records: [...] }"
+        required: false
+        type: string
+      state_path:
+        description: "Path in caller repo to store terraform state"
+        required: false
+        type: string
+        default: ".dns-tfstate/terraform.tfstate"
     secrets:
-      PROVIDER_TOKEN:
-        description: 'API token for the DNS provider'
+      DNS_PROVIDER_TOKEN:
         required: true
+
+permissions:
+  contents: read
 
 jobs:
   apply:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    
     steps:
-      - name: Checkout repository
+      - name: Checkout caller repo
+        uses: actions/checkout@v4
+
+      - name: Checkout vps-manager repo (Terraform code)
         uses: actions/checkout@v4
         with:
-          repository: yarden-zamir/vps-manager
-      
-      - name: Set up Python with uv
-        uses: astral-sh/setup-uv@v2
+          repository: ${{ inputs.vps_manager_repo }}
+          path: vps-manager
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
         with:
-          version: "0.4.29"
-      
-      - name: Install dependencies
+          terraform_version: 1.6.6
+
+      - name: Use records from path
+        if: ${{ inputs.records_path != '' }}
         run: |
-          cd dns
-          uv venv
-          uv pip install -e .
-      
-      - name: Validate zone configuration
+          cp "${{ inputs.records_path }}" vps-manager/dns/terraform/records.auto.tfvars.json
+
+      - name: Write records.auto.tfvars.json (inline)
+        if: ${{ inputs.records_path == '' && inputs.records_json != '' }}
         run: |
-          if [ ! -f "dns/zones/${{ inputs.zone }}.yaml" ]; then
-            echo "❌ Zone configuration not found: dns/zones/${{ inputs.zone }}.yaml"
-            echo ""
-            echo "To set up DNS for this zone, create: dns/zones/${{ inputs.zone }}.yaml"
-            echo "See dns/zones/example.com.yaml for an example."
-            exit 1
-          fi
-      
-      - name: Create dynamic OctoDNS config
+          cat > vps-manager/dns/terraform/records.auto.tfvars.json <<'JSON'
+          ${{ inputs.records_json }}
+          JSON
+
+      - name: Ensure state dir
         run: |
-          cd dns
-          cat > octodns-config.yaml << EOF
-          manager:
-            max_workers: 1
-            
-          providers:
-            config:
-              class: octodns_config.YamlProvider
-              directory: ./zones
-              enforce_order: true
-              
-            ${{ inputs.provider }}:
-          EOF
-          
-          # Add provider-specific configuration
-          case "${{ inputs.provider }}" in
-            cloudflare)
-              cat >> octodns-config.yaml << EOF
-              class: octodns_cloudflare.CloudflareProvider
-              token: env/CLOUDFLARE_TOKEN
-          EOF
-              export CLOUDFLARE_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
-              ;;
-            netlify)
-              cat >> octodns-config.yaml << EOF
-              class: octodns_netlify.NetlifyProvider
-              token: env/NETLIFY_TOKEN
-          EOF
-              export NETLIFY_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
-              ;;
-            digitalocean)
-              cat >> octodns-config.yaml << EOF
-              class: octodns_digitalocean.DigitalOceanProvider
-              token: env/DIGITALOCEAN_TOKEN
-          EOF
-              export DIGITALOCEAN_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
-              ;;
-            dnsimple)
-              cat >> octodns-config.yaml << EOF
-              class: octodns_dnsimple.DnsimpleProvider
-              token: env/DNSIMPLE_TOKEN
-              account: env/DNSIMPLE_ACCOUNT
-          EOF
-              export DNSIMPLE_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
-              # Account ID should be part of the token format: "account_id:token"
-              export DNSIMPLE_ACCOUNT=$(echo "${{ secrets.PROVIDER_TOKEN }}" | cut -d: -f1)
-              export DNSIMPLE_TOKEN=$(echo "${{ secrets.PROVIDER_TOKEN }}" | cut -d: -f2)
-              ;;
-            linode)
-              cat >> octodns-config.yaml << EOF
-              class: octodns_linode.LinodeProvider
-              token: env/LINODE_TOKEN
-          EOF
-              export LINODE_TOKEN="${{ secrets.PROVIDER_TOKEN }}"
-              ;;
-          esac
-          
-          # Add zone configuration
-          cat >> octodns-config.yaml << EOF
-          
-          zones:
-            ${{ inputs.zone }}:
-              sources:
-                - config
-              targets:
-                - ${{ inputs.provider }}
-          EOF
-      
-      - name: Run OctoDNS apply
-        id: apply
+          mkdir -p "$(dirname '${{ inputs.state_path }}')"
+
+      - name: Terraform Init
+        env:
+          TF_VAR_dns_provider_token: ${{ secrets.DNS_PROVIDER_TOKEN }}
         run: |
-          cd dns
-          source .venv/bin/activate
-          
-          # First run a dry-run to show what will change
-          echo "### Pre-apply Plan" > apply-summary.md
-          echo '```' >> apply-summary.md
-          octodns-sync --config-file octodns-config.yaml --dry-run 2>&1 | tee plan.log
-          cat plan.log >> apply-summary.md
-          echo '```' >> apply-summary.md
-          echo "" >> apply-summary.md
-          
-          # Check if there are changes
-          if grep -q "No changes" plan.log; then
-            echo "✅ **No changes to apply**" >> apply-summary.md
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-          else
-            # Apply the changes
-            echo "### Applying Changes" >> apply-summary.md
-            echo '```' >> apply-summary.md
-            octodns-sync --config-file octodns-config.yaml --doit 2>&1 | tee apply.log
-            cat apply.log >> apply-summary.md
-            echo '```' >> apply-summary.md
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-            
-            # Check if apply was successful
-            if [ $? -eq 0 ]; then
-              echo "" >> apply-summary.md
-              echo "✅ **DNS changes applied successfully!**" >> apply-summary.md
-            else
-              echo "" >> apply-summary.md
-              echo "❌ **DNS apply failed!**" >> apply-summary.md
-              exit 1
-            fi
-          fi
-      
-      - name: Create summary
+          terraform -chdir=vps-manager/dns/terraform init -input=false -reconfigure -backend-config="path=${{ github.workspace }}/${{ inputs.state_path }}"
+
+      - name: Terraform Apply
+        env:
+          TF_VAR_dns_provider_token: ${{ secrets.DNS_PROVIDER_TOKEN }}
         run: |
-          echo "## DNS Apply Results for ${{ inputs.zone }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Provider: **${{ inputs.provider }}**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          cat dns/apply-summary.md >> $GITHUB_STEP_SUMMARY
+          terraform -chdir=vps-manager/dns/terraform apply -input=false -auto-approve -no-color

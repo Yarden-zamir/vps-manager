@@ -1,6 +1,6 @@
-# DNS Management with OctoDNS
+# DNS Management with Terraform (Local State)
 
-This guide explains how DNS management is integrated into the VPS Manager using OctoDNS and GitHub Actions.
+This guide explains how DNS management is integrated into the VPS Manager using Terraform with a local backend. Minimal setup targeting Netlify DNS only.
 
 ## Overview
 
@@ -11,9 +11,9 @@ The VPS Manager provides centralized DNS configuration management while maintain
 ### Components
 
 1. **Central Config Repository** (`vps-manager`)
-   - Stores all DNS zone configurations in `dns/zones/`
-   - Stores provider metadata in `dns/zones-meta/`
-   - Provides reusable GitHub workflows
+   - Stores DNS zone definitions in `dns/zones/` (simple YAML)
+   - Stores Terraform configuration in `dns/terraform/`
+   - Provides reusable helper scripts
    - Single source of truth with git history
 
 2. **Service Repositories**
@@ -21,9 +21,9 @@ The VPS Manager provides centralized DNS configuration management while maintain
    - Store DNS provider tokens as secrets
    - Call central workflows to manage DNS
 
-3. **GitHub Actions Workflows**
-   - `dns-plan.yml` - Shows what changes will be made
-   - `dns-apply.yml` - Applies changes to DNS provider
+3. **Terraform via CI**
+   - Define records JSON in your service repo or generate it in the workflow
+   - Call shared workflows `dns-plan.yml` / `dns-apply.yml` using repo secrets
 
 ### Security Model
 
@@ -37,97 +37,69 @@ The VPS Manager provides centralized DNS configuration management while maintain
 ### 1. Choose Your DNS Provider
 
 Supported providers:
-- **Cloudflare** - Fast, reliable, good API
 - **Netlify DNS** - Great for Netlify-hosted sites
-- **DigitalOcean** - If you're already using DO
-- **DNSimple** - Professional DNS service
-- **Linode** - Another VPS provider option
+  - Others can be added later if needed
 
-### 2. Add DNS Configuration
+### 2. Define DNS Records (tfvars JSON)
 
 Create a pull request to `vps-manager` adding your zone configuration:
 
 #### Zone Configuration
-Create `dns/zones/yourdomain.com.yaml`:
+Create `dns/terraform/records.auto.tfvars.json`:
 
-```yaml
-# DNS records for yourdomain.com
-
-# Root domain pointing to VPS
-'':
-  type: A
-  value: YOUR_VPS_IP
-
-# WWW redirect
-www:
-  type: CNAME
-  value: yourdomain.com.
-
-# Your service subdomain
-myapp:
-  type: A
-  value: YOUR_VPS_IP
+```json
+{
+  "records": [
+    {"zone": "yourdomain.com", "name": "", "type": "A", "values": ["YOUR_VPS_IP"]},
+    {"zone": "yourdomain.com", "name": "www", "type": "CNAME", "values": ["yourdomain.com."]},
+    {"zone": "yourdomain.com", "name": "api", "type": "A", "values": ["YOUR_VPS_IP"]}
+  ]
+}
 ```
 
-Note: No metadata file needed - just provide your DNS provider token!
+### 3. Authenticate Provider
 
-### 3. Set Up Provider Token
+Export credentials locally before running Terraform:
 
-In your service repository, add the DNS provider token as a secret:
+- Netlify: `export NETLIFY_TOKEN=...`
 
-1. Go to Settings → Secrets and variables → Actions
-2. Add repository secret `DNS_PROVIDER_TOKEN`
+### 4. Apply via Terraform (CI)
 
-Token format by provider:
-- **Cloudflare**: API token with Zone:Read and DNS:Edit permissions
-- **Netlify**: Personal access token
-- **DigitalOcean**: Personal access token with read/write scope
-- **DNSimple**: Format as `account_id:api_token`
-- **Linode**: Personal access token with domains:read_write scope
-
-### 4. Add DNS Workflows to Your Service
-
-Create `.github/workflows/dns-plan.yml` in your service repo:
+```bash
+In your service repo, call the reusable workflows with inputs and secrets:
 
 ```yaml
-name: DNS Plan
+name: DNS
 
 on:
-  pull_request:
-    paths:
-      - '.github/workflows/dns-*.yml'
   workflow_dispatch:
 
 jobs:
   plan:
-    uses: YOUR_GITHUB_USERNAME/vps-manager/.github/workflows/dns-plan.yml@main
+    uses: YOUR_ORG/vps-manager/.github/workflows/dns-plan.yml@main
     with:
-      zone: yourdomain.com
-      provider: cloudflare  # Match zones-meta provider
+      records_json: |
+        {
+          "records": [
+            {"zone": "yourdomain.com", "name": "", "type": "A", "values": ["YOUR_VPS_IP"]}
+          ]
+        }
     secrets:
-      PROVIDER_TOKEN: ${{ secrets.DNS_PROVIDER_TOKEN }}
-```
+      NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
 
-Create `.github/workflows/dns-apply.yml`:
-
-```yaml
-name: DNS Apply
-
-on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/dns-*.yml'
-  workflow_dispatch:
-
-jobs:
   apply:
-    uses: YOUR_GITHUB_USERNAME/vps-manager/.github/workflows/dns-apply.yml@main
+    needs: plan
+    uses: YOUR_ORG/vps-manager/.github/workflows/dns-apply.yml@main
     with:
-      zone: yourdomain.com
-      provider: cloudflare  # Match zones-meta provider
+      records_json: |
+        {
+          "records": [
+            {"zone": "yourdomain.com", "name": "", "type": "A", "values": ["YOUR_VPS_IP"]}
+          ]
+        }
     secrets:
-      PROVIDER_TOKEN: ${{ secrets.DNS_PROVIDER_TOKEN }}
+      NETLIFY_TOKEN: ${{ secrets.NETLIFY_TOKEN }}
+```
 ```
 
 ## Making DNS Changes
@@ -145,8 +117,7 @@ jobs:
      type: A
      value: YOUR_VPS_IP
    ```
-3. The PR will show the DNS plan via GitHub Actions
-4. After merge, trigger the apply workflow in your service repo
+3. Run `terraform plan` locally to see changes, then apply when ready
 
 ### Updating Records
 
@@ -158,14 +129,14 @@ jobs:
 
 1. Remove the records from `dns/zones/yourdomain.com.yaml`
 2. Submit PR, review plan, merge
-3. Apply changes from your service repo
+3. Re-run Terraform apply
 
 ## Integration with Service Creation
 
-When creating a new service with `create-service.sh`, you'll need to:
+When creating a new service with `create-service.py`, you'll need to:
 
 1. Add DNS configuration for your domain (follow steps above)
-2. Configure the DNS provider secret in your service repo
+2. Export provider token locally: `export NETLIFY_TOKEN=...`
 3. Update Traefik labels to use your domain
 
 The service creation script already sets up:
@@ -256,10 +227,7 @@ To add a new DNS provider:
 
 ### Automation
 
-You can automate DNS updates by:
-- Triggering workflows from deployment pipelines
-- Using GitHub API to create DNS change PRs
-- Setting up scheduled checks for drift
+You can automate Terraform in your own CI/CD, but this repo assumes local state.
 
 ### Multi-Region
 
