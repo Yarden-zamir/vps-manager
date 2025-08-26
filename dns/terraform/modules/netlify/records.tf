@@ -19,33 +19,34 @@ variable "records" {
   default = []
 }
 
+data "netlify_dns_zone" "zone" {
+  for_each = { for z in distinct([for r in var.records : r.zone]) : z => z }
+  name     = each.key
+}
+
 locals {
-  prepared = [
-    for r in var.records : {
-      zone    = r.zone
-      name    = r.name
-      type    = upper(r.type)
-      values  = r.values
-      ttl     = try(r.ttl, null)
-    }
-  ]
+  zone_id_by_name = { for k, z in data.netlify_dns_zone.zone : k => z.id }
 }
 
 # Create records. Netlify requires one record per value; expand values.
 resource "netlify_dns_record" "this" {
   for_each = {
-    for i, rec in flatten([
-      for r in local.prepared : [
-        for v in r.values : merge(r, {
-          key    = "${r.zone}|${r.name}|${r.type}|${v}|${i}"
-          value  = v
-        })
+    for rec in flatten([
+      for r in var.records : [
+        for v in r.values : {
+          key      = "${r.zone}|${r.name}|${upper(r.type)}|${v}"
+          zone_id  = lookup(local.zone_id_by_name, r.zone, null)
+          hostname = r.name
+          type     = upper(r.type)
+          value    = v
+          ttl      = try(r.ttl, null)
+        }
       ]
     ]) : rec.key => rec
   }
 
-  domain   = each.value.zone
-  hostname = each.value.name
+  zone_id  = each.value.zone_id
+  hostname = each.value.hostname
   type     = each.value.type
   value    = each.value.value
 
