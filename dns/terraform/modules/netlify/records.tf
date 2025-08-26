@@ -45,15 +45,10 @@ resource "netlify_dns_record" "this" {
   for_each = {
     for i, rec in flatten([
       for r in local.prepared : [
-        for v in r.values : {
+        for v in r.values : merge(r, {
           key    = "${r.zone}|${r.name}|${r.type}|${v}|${i}"
-          zone   = r.zone
-          zone_id = r.zone_id
-          name   = r.name
-          type   = r.type
           value  = v
-          ttl    = r.ttl
-        }
+        })
       ]
     ]) : rec.key => rec
   }
