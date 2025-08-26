@@ -7,7 +7,7 @@ on:
         description: "Owner/Repo of vps-manager containing Terraform code"
         required: false
         type: string
-        default: "kcw/vps-manager"
+        default: "yarden-zamir/vps-manager"
       records_json:
         description: "JSON string with { records: [...] } matching dns/terraform schema"
         required: false

@@ -408,7 +408,7 @@ def setup_local_files(local_path: Path, service_name: str, vps_manager_repo: str
 
 def setup_github_repo(local_path: Path, service_name: str, repo_name: Optional[str],
                      vps_host: str, service_user: str, service_password: str,
-                     vps_manager_repo: str, domain: Optional[str] = None) -> str:
+                      vps_manager_repo: str, domain: Optional[str] = None, app_port: Optional[int] = None) -> str:
     """Initialize git repo and connect to GitHub."""
     # Change to local path
     git = sh.git.bake(_cwd=str(local_path))
@@ -479,7 +479,7 @@ def setup_github_repo(local_path: Path, service_name: str, repo_name: Optional[s
             console.print(f"[yellow]Warning:[/yellow] Failed to set secret {name}")
     
     variables = {
-        "APP_PORT": "3000",
+        "APP_PORT": str(app_port or 3000),
         "VPS_MANAGER_REPO": vps_manager_repo,
     }
     
@@ -707,14 +707,41 @@ def create_service(
     creds_table.add_row("SSH Command", f"ssh {service_user}@{vps_host}")
     console.print(creds_table)
     
-    # Check for a free app port on VPS and suggest one
+    # Check for a free application port on your VPS...
     preferred_port = 3000
     console.print("\n[bold]Checking for a free application port on your VPS...[/bold]")
     free_port = suggest_free_port(vps_host, preferred_port)
     if free_port != preferred_port:
         console.print(f"[yellow]Port {preferred_port} appears to be in use. Suggesting free port: {free_port}[/yellow]")
+        use_suggested = Confirm.ask(f"Use suggested port {free_port}?", default=True)
+        if use_suggested:
+            chosen_port = free_port
+        else:
+            while True:
+                try:
+                    desired = IntPrompt.ask("Enter desired port (1024-65535)", default=free_port)
+                    if desired < 1024 or desired > 65535:
+                        console.print("[red]Port must be between 1024 and 65535[/red]")
+                        continue
+                    # Check if desired is free
+                    import subprocess
+                    cmd = [
+                        "ssh", "-q", "-o", "LogLevel=ERROR", f"root@{vps_host}",
+                        f"(command -v ss >/dev/null && ss -ltn '( sport = :{desired} )' | tail -n +2) || (command -v lsof >/dev/null && lsof -iTCP:{desired} -sTCP:LISTEN) || true"
+                    ]
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    busy = bool(result.stdout.strip())
+                    if busy:
+                        console.print(f"[red]Port {desired} is in use on the VPS. Pick another.")
+                        continue
+                    chosen_port = desired
+                    break
+                except Exception:
+                    console.print("[red]Failed to validate port. Try again.")
+                    continue
     else:
         console.print(f"[green]✓[/green] Port {free_port} looks free")
+        chosen_port = free_port
     
     # Set up local files
     setup_local_files(local_path, service_name, vps_manager_repo, domain, 
@@ -732,18 +759,18 @@ def create_service(
             found = False
             for i, line in enumerate(env_lines):
                 if line.startswith("APP_PORT="):
-                    env_lines[i] = f"APP_PORT={free_port}"
+                    env_lines[i] = f"APP_PORT={chosen_port}"
                     found = True
                     break
             if not found:
-                env_lines.append(f"APP_PORT={free_port}")
+                env_lines.append(f"APP_PORT={chosen_port}")
             env_path.write_text("\n".join(env_lines) + "\n")
     except Exception:
         pass
     
     # Set up GitHub repo
     repo_name = setup_github_repo(local_path, service_name, repo, vps_host, 
-                                 service_user, service_password, vps_manager_repo, domain)
+                                  service_user, service_password, vps_manager_repo, domain, chosen_port)
     
     # Set DNS provider token if provided
     if dns_provider_token and domain:
