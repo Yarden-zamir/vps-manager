@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  app-template:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        COMMIT_SHA: ${GITHUB_SHA:-local}
+    container_name: app-template
+    restart: unless-stopped
+    
+    environment:
+      - APP_PORT=${APP_PORT:-3000}
+      - ENVIRONMENT=production
+      - COMMIT_SHA=${GITHUB_SHA:-local}
+    
+    # Port mapping (internal container port to host port)
+    ports:
+      - "${APP_PORT:-3000}:${APP_PORT:-3000}"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:${APP_PORT:-3000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Traefik labels
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app-template.rule=Host(`myapp.example.com`)"
+      - "traefik.http.routers.app-template.entrypoints=websecure"
+      - "traefik.http.routers.app-template.tls.certresolver=letsencrypt"
+      - "traefik.http.services.app-template.loadbalancer.server.port=${APP_PORT:-3000}"
+      
+      # Optional: Add middleware for security headers
+      - "traefik.http.routers.app-template.middlewares=security-headers@file"
+      
+      # Health check endpoint for Traefik
+      - "traefik.http.services.app-template.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.app-template.loadbalancer.healthcheck.interval=30s"
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Volumes for persistent data (uncomment as needed)
+    volumes:
+      - /persistent/app-template/data:/app/data
+      - /logs/app-template:/app/logs
+
+networks:
+  default:
+    external: true
+    name: traefik_default

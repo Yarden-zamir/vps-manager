@@ -56,6 +56,21 @@ class DNSProvider(str, Enum):
 # Template types are now discovered dynamically from the templates/ folder
 
 
+def get_template_color(template_name: str) -> str:
+    """Generate a consistent random color based on template name as seed."""
+    import hashlib
+    
+    # Use template name as seed for consistent color
+    hash_object = hashlib.md5(template_name.encode())
+    hash_int = int(hash_object.hexdigest()[:6], 16)
+    
+    # Available rich colors (excluding black/white for visibility)
+    colors = ["red", "green", "yellow", "blue", "magenta", "cyan", "bright_red", 
+              "bright_green", "bright_yellow", "bright_blue", "bright_magenta", "bright_cyan"]
+    
+    return colors[hash_int % len(colors)]
+
+
 def discover_templates(vps_manager_repo: str) -> dict[str, str]:
     """Discover available templates by downloading and scanning the templates directory."""
     templates = {}
@@ -84,37 +99,27 @@ def discover_templates(vps_manager_repo: str) -> dict[str, str]:
                         # Extract the template type from folder name (remove "template-" prefix)
                         template_type = item.name.replace("template-", "")
                         
-                        # Try to read description from README.md or use fallback
-                        description = None
+                        # Try to read description from README.md first line after title
+                        description = template_type.replace("-", "/").title()  # Default fallback
                         readme_path = item / "README.md"
                         if readme_path.exists():
                             try:
                                 readme_content = readme_path.read_text()
-                                # Look for description in first few lines
-                                for line in readme_content.split('\n')[:5]:
-                                    if line.strip() and not line.startswith('#'):
-                                        description = line.strip()
+                                lines = readme_content.split('\n')
+                                # Look for first non-empty, non-header line
+                                for line in lines[:10]:  # Check first 10 lines
+                                    line = line.strip()
+                                    if line and not line.startswith('#') and not line.startswith('='):
+                                        description = line
                                         break
                             except:
-                                pass
-                        
-                        # Fallback to generated description
-                        if not description:
-                            description = template_type.replace("-", "/").title()
-                            if template_type == "js-express":
-                                description = "JavaScript/Express with Bun"
-                            elif template_type == "python-fastapi":
-                                description = "Python/FastAPI with uv"
+                                pass  # Use fallback
                         
                         templates[template_type] = description
                         
         except Exception as e:
-            # Fallback to known templates if discovery fails
-            console.print(f"[yellow]Warning:[/yellow] Could not discover templates dynamically: {e}")
-            templates = {
-                "js-express": "JavaScript/Express with Bun",
-                "python-fastapi": "Python/FastAPI with uv"
-            }
+            # If discovery fails, still return empty dict - let script handle gracefully
+            console.print(f"[yellow]Warning:[/yellow] Could not discover templates: {e}")
     
     return templates
 
@@ -457,41 +462,57 @@ def setup_local_files(local_path: Path, service_name: str, vps_manager_repo: str
                     shutil.rmtree(dest)
                 shutil.copytree(item, dest)
             else:
+                # Always copy tech-specific files, including Makefile overrides
                 shutil.copy2(item, dest)
     
-    # Replace placeholders
+    # Replace placeholders in all text files
     console.print(f"[green]✓[/green] Customizing template...")
     
-    # File extensions to process
-    extensions = ['.yml', '.yaml', '.json', '.md', '.js', '.py', '.toml']
+    def is_text_file(file_path: Path) -> bool:
+        """Check if a file is likely a text file that can be safely processed."""
+        # Known text file extensions
+        text_extensions = {
+            '.yml', '.yaml', '.json', '.md', '.txt', '.js', '.py', '.toml', 
+            '.go', '.mod', '.sum', '.html', '.css', '.xml', '.env', '.gitignore',
+            '.sh', '.bat', '.ps1', '.dockerfile', '.sql', '.ini', '.cfg', '.conf'
+        }
+        
+        # Check extension first
+        if file_path.suffix.lower() in text_extensions:
+            return True
+            
+        # Check if Makefile or similar
+        if file_path.name.lower() in {'makefile', 'dockerfile', 'readme', 'license', 'changelog'}:
+            return True
+            
+        # For other files, try to detect if they're text by reading a small sample
+        try:
+            with open(file_path, 'rb') as f:
+                sample = f.read(1024)
+                # If we can decode as UTF-8 and don't have null bytes, likely text
+                sample.decode('utf-8')
+                return b'\x00' not in sample
+        except:
+            return False
     
     for file_path in local_path.rglob("*"):
-        if file_path.is_file() and file_path.suffix in extensions:
+        if file_path.is_file() and is_text_file(file_path):
             try:
-                content = file_path.read_text()
+                content = file_path.read_text(encoding='utf-8')
+                
+                # Generic placeholder replacements
                 content = content.replace("myapp", service_name)
                 content = content.replace("app-template", service_name)
                 
                 if domain:
                     content = content.replace("myapp.example.com", domain)
                 
-                file_path.write_text(content)
+                file_path.write_text(content, encoding='utf-8')
             except Exception:
-                pass  # Skip binary files or files with encoding issues
+                pass  # Skip files that can't be processed
     
-    # Update tech-specific files
-    if template_type == "js-express":
-        package_json = local_path / "package.json"
-        if package_json.exists():
-            content = package_json.read_text()
-            content = content.replace("app-template", service_name)
-            package_json.write_text(content)
-    elif template_type == "python-fastapi":
-        pyproject_toml = local_path / "pyproject.toml"
-        if pyproject_toml.exists():
-            content = pyproject_toml.read_text()
-            content = content.replace("app-template", service_name)
-            pyproject_toml.write_text(content)
+    # All template-specific customization is now handled by the generic placeholder replacement above
+    # No hardcoded template logic needed - everything is derived from the template files themselves
     
     # Update DNS workflows if domain and provider specified
     if domain and provider:
@@ -737,10 +758,11 @@ def run_dns_apply(repo_name: str, domain: str, provider: str) -> bool:
 
 
 def trigger_initial_deployment(local_path: Path, repo_name: str) -> bool:
-    """Commit all files and push to trigger initial deployment."""
-    console.print(f"\n[green]✓[/green] Triggering initial deployment...")
+    """Generate lockfiles, commit all files and push to trigger initial deployment."""
+    console.print(f"\n[green]✓[/green] Preparing initial deployment...")
     
     git = sh.git.bake(_cwd=str(local_path))
+    make = sh.make.bake(_cwd=str(local_path))
     
     try:
         with Progress(
@@ -748,14 +770,28 @@ def trigger_initial_deployment(local_path: Path, repo_name: str) -> bool:
             TextColumn("[progress.description]{task.description}"),
             console=console,
         ) as progress:
-            # Add all files
+            # Generate lockfiles using Makefile
+            task = progress.add_task("Generating lockfiles and updating dependencies...", total=None)
+            try:
+                make("update")
+                progress.update(task, completed=True)
+                console.print(f"[green]✓[/green] Lockfiles generated successfully")
+            except sh.ErrorReturnCode as e:
+                progress.update(task, completed=True)
+                console.print(f"[yellow]Warning:[/yellow] Failed to generate lockfiles: {e}")
+                console.print("Continuing with deployment - lockfiles may need to be generated manually")
+            except sh.CommandNotFound:
+                progress.update(task, completed=True)
+                console.print(f"[yellow]Warning:[/yellow] make command not found - skipping lockfile generation")
+            
+            # Add all files (including generated lockfiles)
             task = progress.add_task("Adding files to git...", total=None)
             git("add", ".")
             progress.update(task, completed=True)
             
             # Commit
             task = progress.add_task("Committing initial deployment...", total=None)
-            git("commit", "-m", "Initial deployment - service setup complete")
+            git("commit", "-m", "Initial deployment - service setup complete with lockfiles")
             progress.update(task, completed=True)
             
             # Push to trigger deployment
@@ -850,20 +886,16 @@ def create_service(
         available_templates = discover_templates(vps_manager_repo)
         
         if not available_templates:
-            console.print("[red]Error:[/red] No templates found")
+            console.print("[red]Error:[/red] No templates found in the repository")
+            console.print("Make sure the repository has a 'templates/' directory with 'template-*' folders")
             raise typer.Exit(1)
         
         console.print("\n[bold]Select Service Template:[/bold]")
         template_list = list(available_templates.items())
         
         for i, (template_type, description) in enumerate(template_list, 1):
-            # Add color coding for known templates
-            if template_type == "js-express":
-                color = "blue"
-            elif template_type == "python-fastapi":
-                color = "green"
-            else:
-                color = "cyan"
+            # Generate consistent color based on template name
+            color = get_template_color(template_type)
             console.print(f"{i}. [{color}]{description}[/{color}]")
         
         max_choice = len(template_list)
