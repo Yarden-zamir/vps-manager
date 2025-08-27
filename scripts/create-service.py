@@ -495,18 +495,25 @@ def setup_github_repo(local_path: Path, service_name: str, repo_name: Optional[s
     return repo_name
 
 
-def write_dns_records_json(local_path: Path, domain: str, vps_ip: str, service_name: str) -> Path:
-    """Write a minimal infra/dns-records.json into the service repo."""
+def write_dns_records_json(local_path: Path, domain: str, vps_ip: str, service_name: str,
+                           netlify_team_slug: str = "") -> Path:
+    """Write a minimal infra/dns-records.json into the service repo.
+    Optionally embeds Netlify team slug to allow zone creation.
+    """
     infra_dir = local_path / "infra"
     infra_dir.mkdir(parents=True, exist_ok=True)
     records_path = infra_dir / "dns-records.json"
-    payload = {
-        "records": [
-            {"zone": domain, "name": "", "type": "A", "values": [vps_ip]},
-            {"zone": domain, "name": "www", "type": "CNAME", "values": [f"{domain}."]},
-            {"zone": domain, "name": service_name, "type": "A", "values": [vps_ip]}
-        ]
-    }
+    records = [
+        {"zone": domain, "name": "", "type": "A", "values": [vps_ip]},
+        {"zone": domain, "name": "www", "type": "CNAME", "values": [f"{domain}."]},
+    ]
+    # If the provided domain is already a subdomain like "<service_name>.<apex>", do not add
+    # an extra host record with name == service_name (would become service.service.apex).
+    if not domain.startswith(f"{service_name}."):
+        records.append({"zone": domain, "name": service_name, "type": "A", "values": [vps_ip]})
+    payload = {"records": records}
+    if netlify_team_slug:
+        payload["netlify_team_slug"] = netlify_team_slug
     try:
         records_path.write_text(json.dumps(payload, indent=2) + "\n")
         console.print(f"[green]✓[/green] Wrote {records_path}")
@@ -790,8 +797,16 @@ def create_service(
             vps_ip = socket.gethostbyname(vps_host)
         except:
             vps_ip = vps_host  # Assume it's already an IP
+        # Prompt for Netlify team slug (optional)
+        team_slug = ""
+        if dns_provider and dns_provider.value == "netlify":
+            console.print("\n[bold]Netlify DNS[/bold] - You can optionally provide a team slug so the zone is created if missing.")
+            if Confirm.ask("Provide Netlify team slug now?", default=False):
+                team_slug = Prompt.ask("Enter Netlify team slug", default="")
+                if team_slug:
+                    console.print(f"[green]✓[/green] Will embed team slug for zone creation: {team_slug}")
         # Write service-local DNS records JSON instead of opening a PR in vps-manager
-        write_dns_records_json(local_path, domain, vps_ip, service_name)
+        write_dns_records_json(local_path, domain, vps_ip, service_name, team_slug)
     
     # Final instructions
     console.print("\n[bold green]✅ Service created successfully![/bold green]\n")
