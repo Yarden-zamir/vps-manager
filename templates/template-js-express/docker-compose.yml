@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        COMMIT_SHA: ${COMMIT_SHA:-latest}
+    image: ${APP_NAME}:${COMMIT_SHA:-latest}
+    container_name: ${APP_NAME}
+    restart: unless-stopped
+    env_file:
+      - .env
+    # Expose only via Traefik; do not bind host ports directly
+    networks:
+      - app-network
+      - public
+    volumes:
+      - /persistent/${APP_NAME}/data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:${APP_PORT}/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    labels:
+      # Traefik configuration
+      - "traefik.enable=true"
+      - "traefik.docker.network=public"
+      # HTTP router
+      - "traefik.http.routers.${APP_NAME}.rule=Host(`${APP_DOMAIN}`)"
+      - "traefik.http.routers.${APP_NAME}.entrypoints=web"
+      - "traefik.http.routers.${APP_NAME}.middlewares=${APP_NAME}-redirect"
+      # HTTPS router
+      - "traefik.http.routers.${APP_NAME}-secure.rule=Host(`${APP_DOMAIN}`)"
+      - "traefik.http.routers.${APP_NAME}-secure.entrypoints=websecure"
+      - "traefik.http.routers.${APP_NAME}-secure.tls=true"
+      - "traefik.http.routers.${APP_NAME}-secure.tls.certresolver=letsencrypt"
+      # Redirect HTTP to HTTPS
+      - "traefik.http.middlewares.${APP_NAME}-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.${APP_NAME}-redirect.redirectscheme.permanent=true"
+      # Service
+      - "traefik.http.services.${APP_NAME}.loadbalancer.server.port=${APP_PORT}"
+
+networks:
+  app-network:
+    name: ${APP_NAME}-network
+  public:
+    external: true

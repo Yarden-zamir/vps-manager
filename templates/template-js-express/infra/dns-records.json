@@ -1,0 +1,8 @@
+{
+  "records": [
+    {"zone": "myapp.example.com", "name": "", "type": "A", "values": ["YOUR_VPS_IP"]},
+    {"zone": "myapp.example.com", "name": "www", "type": "CNAME", "values": ["myapp.example.com."]}
+  ]
+}
+
+

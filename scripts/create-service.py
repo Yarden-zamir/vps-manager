@@ -53,6 +53,71 @@ class DNSProvider(str, Enum):
     dnsimple = "dnsimple"
     linode = "linode"
 
+# Template types are now discovered dynamically from the templates/ folder
+
+
+def discover_templates(vps_manager_repo: str) -> dict[str, str]:
+    """Discover available templates by downloading and scanning the templates directory."""
+    templates = {}
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            # Download the repo to scan templates
+            template_url = f"https://github.com/{vps_manager_repo}/archive/main.tar.gz"
+            response = requests.get(template_url, stream=True)
+            response.raise_for_status()
+            
+            tar_path = Path(tmpdir) / "repo.tar.gz"
+            with open(tar_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            # Extract just the templates directory
+            sh.tar("xzf", str(tar_path), "-C", tmpdir, "--strip-components=1", 
+                   "vps-manager-main/templates/")
+            
+            # Scan for template directories (exclude template-base)
+            templates_dir = Path(tmpdir) / "templates"
+            if templates_dir.exists():
+                for item in templates_dir.iterdir():
+                    if item.is_dir() and item.name.startswith("template-") and item.name != "template-base":
+                        # Extract the template type from folder name (remove "template-" prefix)
+                        template_type = item.name.replace("template-", "")
+                        
+                        # Try to read description from README.md or use fallback
+                        description = None
+                        readme_path = item / "README.md"
+                        if readme_path.exists():
+                            try:
+                                readme_content = readme_path.read_text()
+                                # Look for description in first few lines
+                                for line in readme_content.split('\n')[:5]:
+                                    if line.strip() and not line.startswith('#'):
+                                        description = line.strip()
+                                        break
+                            except:
+                                pass
+                        
+                        # Fallback to generated description
+                        if not description:
+                            description = template_type.replace("-", "/").title()
+                            if template_type == "js-express":
+                                description = "JavaScript/Express with Bun"
+                            elif template_type == "python-fastapi":
+                                description = "Python/FastAPI with uv"
+                        
+                        templates[template_type] = description
+                        
+        except Exception as e:
+            # Fallback to known templates if discovery fails
+            console.print(f"[yellow]Warning:[/yellow] Could not discover templates dynamically: {e}")
+            templates = {
+                "js-express": "JavaScript/Express with Bun",
+                "python-fastapi": "Python/FastAPI with uv"
+            }
+    
+    return templates
+
 
 def version_callback(value: bool):
     """Show version and exit."""
@@ -336,46 +401,72 @@ def suggest_free_port(vps_host: str, preferred_port: int = 3000) -> int:
 
 
 def setup_local_files(local_path: Path, service_name: str, vps_manager_repo: str,
-                     domain: Optional[str] = None, provider: Optional[str] = None) -> None:
+                     template_type: str = "js-express", domain: Optional[str] = None, 
+                     provider: Optional[str] = None) -> None:
     """Download template and set up local service files."""
-    console.print(f"[green]✓[/green] Setting up local files...")
+    console.print(f"[green]✓[/green] Setting up local files with {template_type} template...")
     
     # Create directory if needed
     local_path.mkdir(parents=True, exist_ok=True)
     
-    # Download template
+    # Download templates
     with tempfile.TemporaryDirectory() as tmpdir:
         template_url = f"https://github.com/{vps_manager_repo}/archive/main.tar.gz"
         response = requests.get(template_url, stream=True)
         response.raise_for_status()
         
-        tar_path = Path(tmpdir) / "template.tar.gz"
+        tar_path = Path(tmpdir) / "templates.tar.gz"
         with open(tar_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
         
-        # Extract template
-        sh.tar("xzf", str(tar_path), "-C", tmpdir, "--strip-components=2", 
-               "vps-manager-main/template/")
+        # Extract base template files
+        console.print(f"[green]✓[/green] Extracting base template...")
+        sh.tar("xzf", str(tar_path), "-C", tmpdir, "--strip-components=3", 
+               "vps-manager-main/templates/template-base/")
         
-        # Copy files (don't overwrite existing)
-        for item in Path(tmpdir).iterdir():
-            if item.name == "template.tar.gz":
+        # Copy base files first
+        base_dir = Path(tmpdir)
+        for item in base_dir.iterdir():
+            if item.name == "templates.tar.gz":
                 continue
             dest = local_path / item.name
             if dest.exists():
-                console.print(f"[yellow]![/yellow] Skipping existing: {item.name}")
+                console.print(f"[yellow]![/yellow] Skipping existing base file: {item.name}")
             else:
                 if item.is_dir():
                     shutil.copytree(item, dest)
                 else:
                     shutil.copy2(item, dest)
+        
+        # Extract and copy tech-specific template
+        console.print(f"[green]✓[/green] Extracting {template_type} template...")
+        tech_tmpdir = Path(tmpdir) / "tech"
+        tech_tmpdir.mkdir()
+        
+        sh.tar("xzf", str(tar_path), "-C", str(tech_tmpdir), "--strip-components=3", 
+               f"vps-manager-main/templates/template-{template_type}/")
+        
+        # Copy tech-specific files (overwrite base files if needed)
+        for item in tech_tmpdir.iterdir():
+            if item.name in ["templates.tar.gz", ".github", "infra", "README.md", "env.example"]:
+                continue  # Skip files we already have from base
+            dest = local_path / item.name
+            if item.is_dir():
+                if dest.exists():
+                    shutil.rmtree(dest)
+                shutil.copytree(item, dest)
+            else:
+                shutil.copy2(item, dest)
     
     # Replace placeholders
     console.print(f"[green]✓[/green] Customizing template...")
     
+    # File extensions to process
+    extensions = ['.yml', '.yaml', '.json', '.md', '.js', '.py', '.toml']
+    
     for file_path in local_path.rglob("*"):
-        if file_path.is_file() and file_path.suffix in ['.yml', '.yaml', '.json', '.md', '.js']:
+        if file_path.is_file() and file_path.suffix in extensions:
             try:
                 content = file_path.read_text()
                 content = content.replace("myapp", service_name)
@@ -385,15 +476,22 @@ def setup_local_files(local_path: Path, service_name: str, vps_manager_repo: str
                     content = content.replace("myapp.example.com", domain)
                 
                 file_path.write_text(content)
-            except:
-                pass  # Skip binary files
+            except Exception:
+                pass  # Skip binary files or files with encoding issues
     
-    # Update package.json specifically
-    package_json = local_path / "package.json"
-    if package_json.exists():
-        content = package_json.read_text()
-        content = content.replace("app-template", service_name)
-        package_json.write_text(content)
+    # Update tech-specific files
+    if template_type == "js-express":
+        package_json = local_path / "package.json"
+        if package_json.exists():
+            content = package_json.read_text()
+            content = content.replace("app-template", service_name)
+            package_json.write_text(content)
+    elif template_type == "python-fastapi":
+        pyproject_toml = local_path / "pyproject.toml"
+        if pyproject_toml.exists():
+            content = pyproject_toml.read_text()
+            content = content.replace("app-template", service_name)
+            pyproject_toml.write_text(content)
     
     # Update DNS workflows if domain and provider specified
     if domain and provider:
@@ -638,6 +736,44 @@ def run_dns_apply(repo_name: str, domain: str, provider: str) -> bool:
             return False
 
 
+def trigger_initial_deployment(local_path: Path, repo_name: str) -> bool:
+    """Commit all files and push to trigger initial deployment."""
+    console.print(f"\n[green]✓[/green] Triggering initial deployment...")
+    
+    git = sh.git.bake(_cwd=str(local_path))
+    
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            # Add all files
+            task = progress.add_task("Adding files to git...", total=None)
+            git("add", ".")
+            progress.update(task, completed=True)
+            
+            # Commit
+            task = progress.add_task("Committing initial deployment...", total=None)
+            git("commit", "-m", "Initial deployment - service setup complete")
+            progress.update(task, completed=True)
+            
+            # Push to trigger deployment
+            task = progress.add_task("Pushing to trigger deployment...", total=None)
+            git("push", "origin", "main")
+            progress.update(task, completed=True)
+        
+        console.print(f"[green]✓[/green] Initial deployment triggered!")
+        console.print(f"Monitor deployment at: https://github.com/{repo_name}/actions")
+        return True
+        
+    except sh.ErrorReturnCode as e:
+        console.print("[red]Failed to trigger initial deployment[/red]")
+        if hasattr(e, 'stderr') and e.stderr:
+            console.print(e.stderr.decode())
+        return False
+
+
 @app.command()
 def create_service(
     service_name: Annotated[str, Argument(help="Name of the service")],
@@ -645,6 +781,8 @@ def create_service(
                                        callback=lambda p: Path(p).expanduser().resolve())],
     domain: Annotated[Optional[str], Option("--domain", "-d", 
                                           help="Domain name for the service")] = None,
+    template: Annotated[Optional[str], Option("--template", "-t",
+                                             help="Service template type (e.g., js-express, python-fastapi)")] = None,
     dns_provider: Annotated[Optional[DNSProvider], Option("--dns-provider", "-p",
                                                          help="DNS provider (required if domain is specified)")] = None,
     repo: Annotated[Optional[str], Option("--repo", "-r",
@@ -706,12 +844,58 @@ def create_service(
         temp_clone_path = clone_vps_manager_repo(vps_manager_repo)
         vps_manager_path = temp_clone_path
     
+    # Interactive template selection if not provided
+    if not template:
+        console.print("\n[bold]Discovering available templates...[/bold]")
+        available_templates = discover_templates(vps_manager_repo)
+        
+        if not available_templates:
+            console.print("[red]Error:[/red] No templates found")
+            raise typer.Exit(1)
+        
+        console.print("\n[bold]Select Service Template:[/bold]")
+        template_list = list(available_templates.items())
+        
+        for i, (template_type, description) in enumerate(template_list, 1):
+            # Add color coding for known templates
+            if template_type == "js-express":
+                color = "blue"
+            elif template_type == "python-fastapi":
+                color = "green"
+            else:
+                color = "cyan"
+            console.print(f"{i}. [{color}]{description}[/{color}]")
+        
+        max_choice = len(template_list)
+        choice = IntPrompt.ask(
+            "\nSelect template",
+            choices=[str(i) for i in range(1, max_choice + 1)],
+            default=1
+        )
+        
+        template = template_list[choice - 1][0]  # Get the template type
+        console.print(f"[green]✓[/green] Selected: {template}")
+    else:
+        # Validate CLI-provided template exists
+        console.print(f"\n[bold]Validating template: {template}[/bold]")
+        available_templates = discover_templates(vps_manager_repo)
+        
+        if template not in available_templates:
+            console.print(f"[red]Error:[/red] Template '{template}' not found")
+            console.print("Available templates:")
+            for template_type, description in available_templates.items():
+                console.print(f"  • {template_type}: {description}")
+            raise typer.Exit(1)
+        
+        console.print(f"[green]✓[/green] Using template: {template} ({available_templates[template]})")
+    
     # Check requirements
     check_requirements()
     
     # Show summary
     console.print(Panel.fit(
         f"[bold]Creating Service: {service_name}[/bold]\n\n"
+        f"Template: {template}\n"
         f"Local Path: {local_path}\n"
         f"VPS Host: {vps_host}\n"
         f"Domain: {domain or 'Not configured'}\n"
@@ -771,7 +955,7 @@ def create_service(
         chosen_port = free_port
     
     # Set up local files
-    setup_local_files(local_path, service_name, vps_manager_repo, domain, 
+    setup_local_files(local_path, service_name, vps_manager_repo, template, domain, 
                      dns_provider.value if dns_provider else None)
     
     # Ensure .env has the chosen APP_PORT
@@ -838,6 +1022,9 @@ def create_service(
         # Write service-local DNS records JSON instead of opening a PR in vps-manager
         write_dns_records_json(local_path, domain, vps_ip, service_name, team_slug)
     
+    # Trigger initial deployment
+    trigger_initial_deployment(local_path, repo_name)
+    
     # Final instructions
     console.print("\n[bold green]✅ Service created successfully![/bold green]\n")
     
@@ -852,11 +1039,11 @@ def create_service(
     console.print(links_table)
     
     console.print("\n[bold]Next Steps:[/bold]")
-    console.print("1. Update your application code in src/")
-    console.print("2. Make sure Dockerfile is correct for your needs")
-    console.print("3. Push to main branch to deploy:")
+    console.print("1. Wait for the initial deployment to complete")
+    console.print("2. Update your application code in src/")
+    console.print("3. Future deployments are automatic when you push to main:")
     console.print("   git add .")
-    console.print("   git commit -m 'Initial deployment'")
+    console.print("   git commit -m 'Your changes'")
     console.print("   git push")
     
     if domain:

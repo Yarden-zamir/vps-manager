@@ -1,0 +1,30 @@
+name: DNS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ "infra/dns-records.json" ]
+  pull_request:
+    paths: [ "infra/dns-records.json" ]
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    uses: yarden-zamir/vps-manager/.github/workflows/dns-plan.yml@main
+    with:
+      dns_provider: ${{ vars.DNS_PROVIDER }}
+      records_path: infra/dns-records.json
+    secrets:
+      DNS_PROVIDER_TOKEN: ${{ secrets.DNS_PROVIDER_TOKEN }}
+
+  apply:
+    if: github.event_name != 'pull_request'
+    uses: yarden-zamir/vps-manager/.github/workflows/dns-apply.yml@main
+    with:
+      dns_provider: ${{ vars.DNS_PROVIDER }}
+      records_path: infra/dns-records.json
+    secrets:
+      DNS_PROVIDER_TOKEN: ${{ secrets.DNS_PROVIDER_TOKEN }}
+
+
