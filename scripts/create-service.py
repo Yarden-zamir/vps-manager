@@ -414,6 +414,9 @@ def setup_github_repo(local_path: Path, service_name: str, repo_name: Optional[s
     git = sh.git.bake(_cwd=str(local_path))
     gh = sh.gh.bake(_cwd=str(local_path))
     
+    # Ensure we have a repo_name by the end
+    final_repo_name = repo_name
+    
     # Initialize git if needed
     if not (local_path / ".git").exists():
         console.print(f"[green]✓[/green] Initializing git repository...")
@@ -436,18 +439,20 @@ def setup_github_repo(local_path: Path, service_name: str, repo_name: Optional[s
     # Check for existing remote
     try:
         remote_url = git("remote", "get-url", "origin").strip()
-        # Already has remote
+        # Already has remote - extract repo name from URL
         if remote_url.startswith("git@github.com:"):
-            repo_name = remote_url.replace("git@github.com:", "").replace(".git", "")
-        console.print(f"[green]✓[/green] Using existing GitHub remote: {repo_name}")
+            final_repo_name = remote_url.replace("git@github.com:", "").replace(".git", "")
+        elif remote_url.startswith("https://github.com/"):
+            final_repo_name = remote_url.replace("https://github.com/", "").replace(".git", "")
+        console.print(f"[green]✓[/green] Using existing GitHub remote: {final_repo_name}")
     except sh.ErrorReturnCode:
         # Need to create/connect repo
-        if not repo_name:
+        if not final_repo_name:
             # Try to create repo with service name
             username = sh.gh("api", "user", "-q", ".login").strip()
-            repo_name = f"{username}/{service_name}"
+            final_repo_name = f"{username}/{service_name}"
             
-            console.print(f"[green]✓[/green] Creating GitHub repository: {repo_name}")
+            console.print(f"[green]✓[/green] Creating GitHub repository: {final_repo_name}")
             try:
                 gh("repo", "create", service_name, "--private", 
                    "--source=.", "--remote=origin", "--push")
@@ -456,8 +461,8 @@ def setup_github_repo(local_path: Path, service_name: str, repo_name: Optional[s
                 raise typer.Exit(1)
         else:
             # Connect to specified repo
-            console.print(f"[green]✓[/green] Connecting to GitHub repository: {repo_name}")
-            git("remote", "add", "origin", f"git@github.com:{repo_name}.git")
+            console.print(f"[green]✓[/green] Connecting to GitHub repository: {final_repo_name}")
+            git("remote", "add", "origin", f"git@github.com:{final_repo_name}.git")
             try:
                 git("push", "-u", "origin", "main")
             except sh.ErrorReturnCode:
@@ -492,34 +497,40 @@ def setup_github_repo(local_path: Path, service_name: str, repo_name: Optional[s
         except sh.ErrorReturnCode:
             console.print(f"[yellow]Warning:[/yellow] Failed to set variable {name}")
     
-    return repo_name
+    return final_repo_name
 
 
-def write_dns_records_json(local_path: Path, domain: str, vps_ip: str, service_name: str) -> Path:
-    """Write infra/dns-records.json using apex zone + host label.
-    Assumes the parent apex zone already exists at the provider.
-    If domain is an apex (two labels), creates apex A + www CNAME.
-    If domain is a subdomain, creates host A (name=first label) + www.host CNAME.
+def write_dns_records_json(local_path: Path, domain: str, vps_ip: str, service_name: str,
+                           netlify_team_slug: str = "") -> Path:
+    """Write a minimal infra/dns-records.json into the service repo.
+    Optionally embeds Netlify team slug to allow zone creation.
     """
     infra_dir = local_path / "infra"
     infra_dir.mkdir(parents=True, exist_ok=True)
     records_path = infra_dir / "dns-records.json"
-    labels = domain.split('.')
-    if len(labels) >= 3:
-        host = labels[0]
-        apex = '.'.join(labels[1:])
-        # Subdomain case: create host A and www.host CNAME under apex zone
+    
+    # Detect if domain is a subdomain (e.g., potato24.yarden-zamir.com)
+    # We'll assume TLD + one level is the zone (e.g., yarden-zamir.com)
+    parts = domain.split('.')
+    if len(parts) > 2:
+        # Likely a subdomain - extract the zone and subdomain
+        zone = '.'.join(parts[-2:])  # e.g., "yarden-zamir.com"
+        subdomain = '.'.join(parts[:-2])  # e.g., "potato24"
+        
         records = [
-            {"zone": apex, "name": host, "type": "A", "values": [vps_ip]},
-            {"zone": apex, "name": f"www.{host}", "type": "CNAME", "values": [f"{host}.{apex}."]},
+            {"zone": zone, "name": subdomain, "type": "A", "values": [vps_ip]},
+            {"zone": zone, "name": f"www.{subdomain}", "type": "CNAME", "values": [f"{domain}."]},
         ]
     else:
-        # Apex case
-        apex = domain
+        # It's an apex domain (e.g., example.com)
         records = [
-            {"zone": apex, "name": "", "type": "A", "values": [vps_ip]},
-            {"zone": apex, "name": "www", "type": "CNAME", "values": [f"{apex}."]},
+            {"zone": domain, "name": "", "type": "A", "values": [vps_ip]},
+            {"zone": domain, "name": "www", "type": "CNAME", "values": [f"{domain}."]},
         ]
+        # Add service subdomain only if domain isn't already prefixed with service name
+        if not domain.startswith(f"{service_name}."):
+            records.append({"zone": domain, "name": service_name, "type": "A", "values": [vps_ip]})
+    
     payload = {"records": records}
     if netlify_team_slug:
         payload["netlify_team_slug"] = netlify_team_slug
@@ -806,8 +817,26 @@ def create_service(
             vps_ip = socket.gethostbyname(vps_host)
         except:
             vps_ip = vps_host  # Assume it's already an IP
-        # Write service-local DNS records JSON (apex zone + host label)
-        write_dns_records_json(local_path, domain, vps_ip, service_name)
+        # Prompt for Netlify team slug (optional)
+        team_slug = ""
+        if dns_provider and dns_provider.value == "netlify":
+            # Extract zone from domain
+            parts = domain.split('.')
+            zone = '.'.join(parts[-2:]) if len(parts) > 2 else domain
+            
+            console.print(f"\n[bold]Netlify DNS Configuration[/bold]")
+            console.print(f"Zone: {zone}")
+            console.print("\nIf this zone already exists in Netlify, leave the team slug empty.")
+            console.print("Only provide a team slug if you need to create a NEW zone.")
+            
+            if Confirm.ask("Does this zone need to be created?", default=False):
+                team_slug = Prompt.ask("Enter Netlify team slug", default="")
+                if team_slug:
+                    console.print(f"[green]✓[/green] Will create zone with team slug: {team_slug}")
+            else:
+                console.print(f"[green]✓[/green] Using existing zone")
+        # Write service-local DNS records JSON instead of opening a PR in vps-manager
+        write_dns_records_json(local_path, domain, vps_ip, service_name, team_slug)
     
     # Final instructions
     console.print("\n[bold green]✅ Service created successfully![/bold green]\n")
