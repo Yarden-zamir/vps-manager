@@ -48,3 +48,4 @@ ENV ENVIRONMENT=production
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD python -c "import httpx; httpx.get('http://localhost:3000/health').raise_for_status()"
+

@@ -43,3 +43,4 @@ build: ## Build for production (no-op for Bun)
 start: ## Start production server
 	@echo "Starting production server..."
 	bun src/index.js
+

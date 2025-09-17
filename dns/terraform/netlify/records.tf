@@ -14,3 +14,4 @@ output "applied_records" {
   value = module.netlify.applied
 }
 
+

@@ -53,12 +53,12 @@ jobs:
       - name: Use records from path
         if: ${{ inputs.records_path != '' }}
         run: |
-          cp "${{ inputs.records_path }}" vps-manager/dns/terraform/netlify/records.auto.tfvars.json
+          cp "${{ inputs.records_path }}" vps-manager/dns/terraform/records.auto.tfvars.json
 
       - name: Write records.auto.tfvars.json (inline)
         if: ${{ inputs.records_path == '' && inputs.records_json != '' }}
         run: |
-          cat > vps-manager/dns/terraform/netlify/records.auto.tfvars.json <<'JSON'
+          cat > vps-manager/dns/terraform/records.auto.tfvars.json <<'JSON'
           ${{ inputs.records_json }}
           JSON
 
@@ -66,20 +66,18 @@ jobs:
         run: |
           mkdir -p "$(dirname '${{ inputs.state_path }}')"
 
-      - name: Terraform Init (Netlify)
+      - name: Terraform Init
         env:
           TF_VAR_dns_provider: ${{ inputs.dns_provider }}
           TF_VAR_dns_provider_token: ${{ secrets.DNS_PROVIDER_TOKEN }}
-          TF_VAR_netlify_team_slug: ${{ vars.NETLIFY_TEAM_SLUG }}
         run: |
-          terraform -chdir=vps-manager/dns/terraform/netlify init -input=false -reconfigure -backend-config="path=${{ github.workspace }}/${{ inputs.state_path }}"
+          terraform -chdir=vps-manager/dns/terraform init -input=false -reconfigure -backend-config="path=${{ github.workspace }}/${{ inputs.state_path }}"
 
-      - name: Terraform Plan (Netlify)
+      - name: Terraform Plan
         env:
           TF_VAR_dns_provider: ${{ inputs.dns_provider }}
           TF_VAR_dns_provider_token: ${{ secrets.DNS_PROVIDER_TOKEN }}
-          TF_VAR_netlify_team_slug: ${{ vars.NETLIFY_TEAM_SLUG }}
         run: |
-          terraform -chdir=vps-manager/dns/terraform/netlify plan -input=false -no-color
+          terraform -chdir=vps-manager/dns/terraform plan -input=false -no-color
 
       

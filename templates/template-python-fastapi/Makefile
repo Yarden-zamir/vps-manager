@@ -61,3 +61,4 @@ format: ## Format code
 	else \
 		echo "black not installed - skipping formatting"; \
 	fi
+

@@ -25,3 +25,4 @@ cargo test           # Run tests
 - **Build**: Cargo package manager
 - **Container**: Alpine Linux (minimal)
 - **Port**: Configurable via APP_PORT (default: 3000)
+
