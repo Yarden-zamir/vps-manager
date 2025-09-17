@@ -26,3 +26,4 @@ cargo test           # Run tests
 - **Container**: Alpine Linux (minimal)
 - **Port**: Configurable via APP_PORT (default: 3000)
 
+

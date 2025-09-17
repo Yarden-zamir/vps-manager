@@ -20,3 +20,4 @@ test: ## Run tests
 clean: ## Clean generated files and dependencies
 	@echo "No clean target defined for this template"
 
+

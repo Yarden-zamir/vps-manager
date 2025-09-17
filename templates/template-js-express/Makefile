@@ -44,3 +44,4 @@ start: ## Start production server
 	@echo "Starting production server..."
 	bun src/index.js
 
+
