@@ -1,6 +1,6 @@
 # Rust/Axum Framework
 
-Fast and safe web services using Rust with the Axum framework.
+Fast and safe native web services using Rust, Axum, systemd, and Caddy.
 
 ## Features
 
@@ -23,7 +23,7 @@ cargo test           # Run tests
 - **Language**: Rust 1.70+
 - **Framework**: Axum with Tokio runtime
 - **Build**: Cargo package manager
-- **Container**: Alpine Linux (minimal)
+- **Process Manager**: systemd
 - **Port**: Configurable via APP_PORT (default: 3000)
 
 

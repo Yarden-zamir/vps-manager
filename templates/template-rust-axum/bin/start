@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ ! -x ./app-template ]; then
+    cargo build --release
+    cp target/release/app-template ./app-template
+fi
+
+exec ./app-template

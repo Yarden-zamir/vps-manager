@@ -1,35 +1,17 @@
-# DNS Management with OctoDNS
+# DNS Management With Terraform
 
-This directory contains the DNS configuration for all services deployed via this VPS manager.
+This directory contains reusable DNS automation for services deployed by VPS Manager.
 
-## Directory Structure
+## Structure
 
-- `zones/` - DNS record configurations (one YAML file per zone)
-- `pyproject.toml` - Python dependencies for OctoDNS
-- `config.yaml` - Base OctoDNS configuration
+- `terraform/` - Provider-neutral Terraform entrypoint and provider modules
+- `terraform/modules/cloudflare/` - Cloudflare records
+- `terraform/modules/netlify/` - Netlify records
+- `terraform/modules/digitalocean/` - DigitalOcean records
+- `terraform/modules/linode/` - Linode records
 
 ## How It Works
 
-1. Each zone (domain) has a single configuration file:
-   - `zones/<domain>.yaml` - The DNS records for that domain
+Service repositories own `infra/dns-records.json` and call the reusable workflows in `.github/workflows/`.
 
-2. Service repositories provide their own DNS provider tokens as secrets
-3. GitHub Actions workflows handle plan/apply operations
-4. Changes are made via pull requests with review
-
-## Security Model
-
-- No central secrets - each service provides its own provider token
-- Authorization is token-based - if you have the token, you can manage the domain
-- All changes tracked via git history
-- PR review process for changes
-
-## Supported Providers
-
-- Cloudflare
-- Netlify DNS
-- DigitalOcean
-- DNSimple
-- Linode
-
-See the main documentation for setup instructions.
+Each service provides its own `DNS_PROVIDER_TOKEN`, so there is no central DNS secret in this repo.

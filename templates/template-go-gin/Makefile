@@ -1,5 +1,5 @@
 # Go/Gin Makefile
-.PHONY: run update test clean help
+.PHONY: run update deploy-prepare test clean help
 
 # Default target
 .DEFAULT_GOAL := help
@@ -22,6 +22,9 @@ update: ## Install/update dependencies and generate lockfile
 	@echo "Tidying up go.mod and generating go.sum..."
 	go mod tidy
 	@echo "✓ Dependencies updated and go.sum generated"
+
+deploy-prepare: update build ## Prepare binary for native deployment
+	@echo "✓ Go service ready for systemd"
 
 test: ## Run tests
 	@echo "Running tests..."

@@ -9,12 +9,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  APP_NAME: ${{ github.event.repository.name }}
+  APP_NAME: ${{ vars.APP_NAME || github.event.repository.name }}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
         target: "/apps/${{ env.APP_NAME }}"
         overwrite: true
 
-    - name: Create .env file
+    - name: Create environment file
       uses: appleboy/ssh-action@v1
       with:
         host: ${{ secrets.VPS_HOST }}
@@ -56,9 +56,11 @@ jobs:
           cd /apps/$APP_NAME
           : > .env
           echo "NODE_ENV=production" >> .env
+          echo "ENVIRONMENT=production" >> .env
           echo "APP_NAME=$APP_NAME" >> .env
           echo "APP_DOMAIN=$APP_DOMAIN" >> .env
           echo "APP_PORT=$APP_PORT" >> .env
+          echo "PORT=$APP_PORT" >> .env
           echo "COMMIT_SHA=$COMMIT_SHA" >> .env
       env:
         APP_NAME: ${{ env.APP_NAME }}
@@ -66,22 +68,7 @@ jobs:
         APP_PORT: ${{ vars.APP_PORT }}
         COMMIT_SHA: ${{ github.sha }}
 
-    - name: Build and deploy
-      uses: appleboy/ssh-action@v1
-      with:
-        host: ${{ secrets.VPS_HOST }}
-        username: ${{ secrets.VPS_USER }}
-        password: ${{ secrets.VPS_PASSWORD }}
-        envs: APP_NAME,COMMIT_SHA
-        script: |
-          cd /apps/$APP_NAME
-          docker compose build --pull --build-arg COMMIT_SHA=$COMMIT_SHA
-          docker compose up -d --force-recreate
-      env:
-        APP_NAME: ${{ env.APP_NAME }}
-        COMMIT_SHA: ${{ github.sha }}
-
-    - name: Wait for health check
+    - name: Prepare and restart native service
       uses: appleboy/ssh-action@v1
       with:
         host: ${{ secrets.VPS_HOST }}
@@ -89,30 +76,44 @@ jobs:
         password: ${{ secrets.VPS_PASSWORD }}
         envs: APP_NAME
         script: |
+          set -e
           cd /apps/$APP_NAME
-          echo "Waiting for service to be healthy..."
-          for i in {1..30}; do
-            if docker compose ps | grep -q "healthy"; then
-              echo "Service is healthy!"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "Service failed to become healthy"
-              docker compose logs
-              exit 1
-            fi
-            sleep 2
-          done
+          chmod +x bin/start
+          if command -v make >/dev/null 2>&1; then
+            make deploy-prepare
+          fi
+          sudo systemctl restart $APP_NAME.service
       env:
         APP_NAME: ${{ env.APP_NAME }}
 
-    - name: Cleanup old images
+    - name: Wait for health check
       uses: appleboy/ssh-action@v1
       with:
         host: ${{ secrets.VPS_HOST }}
         username: ${{ secrets.VPS_USER }}
         password: ${{ secrets.VPS_PASSWORD }}
-        script: docker image prune -f --filter "until=24h"
+        envs: APP_NAME,APP_PORT
+        script: |
+          set -e
+          echo "Waiting for $APP_NAME to be healthy on localhost:$APP_PORT..."
+          for i in {1..30}; do
+            if curl -fsS "http://127.0.0.1:$APP_PORT/health" >/dev/null; then
+              echo "Service is healthy"
+              exit 0
+            fi
+            if ! sudo systemctl is-active $APP_NAME.service >/dev/null; then
+              echo "Service is not active"
+              sudo journalctl -u $APP_NAME.service -n 100 --no-pager
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "Service failed to become healthy"
+          sudo journalctl -u $APP_NAME.service -n 100 --no-pager
+          exit 1
+      env:
+        APP_NAME: ${{ env.APP_NAME }}
+        APP_PORT: ${{ vars.APP_PORT }}
 
     - name: Verify public HTTPS
       if: ${{ vars.APP_DOMAIN != '' }}
@@ -133,4 +134,3 @@ jobs:
           echo "Timed out waiting for HTTPS at https://$APP_DOMAIN"
           exit 1
         fi
-

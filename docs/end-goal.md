@@ -1,0 +1,11 @@
+- easy bootstrap remote vps for deployments
+- easy create from template
+    - logs
+    - start.sh
+    - update.sh
+- push to deploy
+    - push to main of a repo tagged in a specific way deploys
+- secrets deployed to servers
+- symlink logs from project dirs to a common logs dir
+- logs ui
+- also deploy none-main branches if they have a prefix

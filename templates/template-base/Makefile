@@ -1,5 +1,5 @@
 # Base Makefile - This will be overridden by template-specific Makefile
-.PHONY: run update test clean help
+.PHONY: run update deploy-prepare test clean help
 
 # Default target
 .DEFAULT_GOAL := help
@@ -13,6 +13,9 @@ run: ## Start the development server
 
 update: ## Install/update dependencies and generate lockfile
 	@echo "No update target defined for this template"
+
+deploy-prepare: update ## Prepare dependencies/artifacts for native deployment
+	@echo "No deployment preparation defined for this template"
 
 test: ## Run tests
 	@echo "No test target defined for this template"

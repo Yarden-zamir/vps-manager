@@ -1,0 +1,6 @@
+{
+    # Set during bootstrap with: sudo bash scripts/bootstrap.sh --email admin@example.com
+    # email admin@example.com
+}
+
+import /etc/caddy/apps/*.caddy

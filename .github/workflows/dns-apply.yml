@@ -53,14 +53,30 @@ jobs:
       - name: Use records from path
         if: ${{ inputs.records_path != '' }}
         run: |
-          cp "${{ inputs.records_path }}" vps-manager/dns/terraform/records.auto.tfvars.json
+          # Extract netlify_team_slug if present in JSON
+          if [ -f "${{ inputs.records_path }}" ]; then
+            TEAM_SLUG=$(jq -r '.netlify_team_slug // empty' "${{ inputs.records_path }}" || echo "")
+            if [ -n "$TEAM_SLUG" ]; then
+              echo "NETLIFY_TEAM_SLUG_FROM_JSON=$TEAM_SLUG" >> $GITHUB_ENV
+            fi
+            # Remove netlify_team_slug from JSON before copying to Terraform
+            jq 'del(.netlify_team_slug)' "${{ inputs.records_path }}" > vps-manager/dns/terraform/records.auto.tfvars.json
+          else
+            cp "${{ inputs.records_path }}" vps-manager/dns/terraform/records.auto.tfvars.json
+          fi
 
       - name: Write records.auto.tfvars.json (inline)
         if: ${{ inputs.records_path == '' && inputs.records_json != '' }}
         run: |
-          cat > vps-manager/dns/terraform/records.auto.tfvars.json <<'JSON'
-          ${{ inputs.records_json }}
-          JSON
+          # Extract netlify_team_slug if present in inline JSON
+          echo '${{ inputs.records_json }}' > temp_records.json
+          TEAM_SLUG=$(jq -r '.netlify_team_slug // empty' temp_records.json || echo "")
+          if [ -n "$TEAM_SLUG" ]; then
+            echo "NETLIFY_TEAM_SLUG_FROM_JSON=$TEAM_SLUG" >> $GITHUB_ENV
+          fi
+          # Remove netlify_team_slug from JSON before writing to Terraform
+          jq 'del(.netlify_team_slug)' temp_records.json > vps-manager/dns/terraform/records.auto.tfvars.json
+          rm temp_records.json
 
       - name: Ensure state dir
         run: |
@@ -70,7 +86,7 @@ jobs:
         env:
           TF_VAR_dns_provider: ${{ inputs.dns_provider }}
           TF_VAR_dns_provider_token: ${{ secrets.DNS_PROVIDER_TOKEN }}
-          TF_VAR_netlify_team_slug: ${{ vars.NETLIFY_TEAM_SLUG }}
+          TF_VAR_netlify_team_slug: ${{ env.NETLIFY_TEAM_SLUG_FROM_JSON || vars.NETLIFY_TEAM_SLUG || '' }}
         run: |
           terraform -chdir=vps-manager/dns/terraform init -input=false -reconfigure -backend-config="path=${{ github.workspace }}/${{ inputs.state_path }}"
 
@@ -78,6 +94,6 @@ jobs:
         env:
           TF_VAR_dns_provider: ${{ inputs.dns_provider }}
           TF_VAR_dns_provider_token: ${{ secrets.DNS_PROVIDER_TOKEN }}
-          TF_VAR_netlify_team_slug: ${{ vars.NETLIFY_TEAM_SLUG }}
+          TF_VAR_netlify_team_slug: ${{ env.NETLIFY_TEAM_SLUG_FROM_JSON || vars.NETLIFY_TEAM_SLUG || '' }}
         run: |
           terraform -chdir=vps-manager/dns/terraform apply -input=false -auto-approve -no-color

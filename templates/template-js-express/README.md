@@ -1,6 +1,6 @@
 # JavaScript/Express with Bun
 
-A high-performance Node.js alternative using Bun runtime with Express.js framework.
+A native Bun service template for systemd deployments behind Caddy.
 
 ## Features
 
@@ -8,7 +8,7 @@ A high-performance Node.js alternative using Bun runtime with Express.js framewo
 - **Express.js**: Popular and familiar web framework
 - **No Build Step**: Direct execution of TypeScript/JavaScript
 - **Built-in Package Manager**: Fast dependency installation
-- **Docker Support**: Optimized Dockerfile for production
+- **Native Deployment**: systemd runs `bin/start`; Caddy handles HTTPS
 
 ## Quick Start
 
@@ -22,5 +22,5 @@ bun start    # Production server
 
 - **Runtime**: Bun 1.x
 - **Framework**: Express.js 4.x
-- **Container**: Alpine Linux
+- **Process Manager**: systemd
 - **Port**: Configurable via APP_PORT (default: 3000)

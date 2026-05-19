@@ -1,5 +1,5 @@
 # JavaScript/Express with Bun Makefile
-.PHONY: run update test clean help
+.PHONY: run update deploy-prepare test clean help
 
 # Default target
 .DEFAULT_GOAL := help
@@ -19,6 +19,9 @@ update: ## Install/update dependencies and generate lockfile
 	@echo "Installing dependencies with Bun..."
 	bun install
 	@echo "✓ Dependencies installed and bun.lockb generated"
+
+deploy-prepare: update ## Prepare dependencies for native deployment
+	@echo "✓ Bun service ready for systemd"
 
 test: ## Run tests
 	@echo "Running tests..."

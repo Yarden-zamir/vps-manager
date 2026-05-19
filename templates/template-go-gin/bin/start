@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ ! -x ./app-template ]; then
+    go build -o app-template .
+fi
+
+exec ./app-template

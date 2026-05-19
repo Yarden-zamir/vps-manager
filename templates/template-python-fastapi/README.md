@@ -1,6 +1,6 @@
 # Python/FastAPI with uv
 
-Modern Python API development with FastAPI framework and uv package manager.
+Modern Python API development with FastAPI, uv, systemd, and Caddy.
 
 ## Features
 
@@ -8,7 +8,7 @@ Modern Python API development with FastAPI framework and uv package manager.
 - **uv Package Manager**: Extremely fast Python package installation
 - **Type Safety**: Full Pydantic integration for request/response validation
 - **Auto Documentation**: Built-in OpenAPI/Swagger docs
-- **Production Ready**: Proper logging, health checks, and error handling
+- **Production Ready**: Native systemd process, Caddy HTTPS, health checks, and error handling
 
 ## Quick Start
 
@@ -23,5 +23,5 @@ uv run src/main.py   # Development server
 - **Framework**: FastAPI with Uvicorn
 - **Package Manager**: uv (faster than pip)
 - **Validation**: Pydantic v2
-- **Container**: Python Alpine
+- **Process Manager**: systemd
 - **Port**: Configurable via APP_PORT (default: 3000)

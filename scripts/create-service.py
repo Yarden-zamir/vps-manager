@@ -137,6 +137,24 @@ def generate_password(length: int = 16) -> str:
     return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 
+def validate_service_name(service_name: str) -> None:
+    """Validate service names used in users, paths, systemd units, and Caddy files."""
+    import re
+
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9-]{0,62}", service_name):
+        console.print("[red]Error:[/red] service_name must be 1-63 chars of letters, numbers, or hyphens")
+        raise typer.Exit(1)
+
+
+def validate_domain(domain: Optional[str]) -> None:
+    """Validate a domain before using it in DNS and Caddy config."""
+    import re
+
+    if domain and not re.fullmatch(r"(?=.{1,253}$)([a-zA-Z0-9][a-zA-Z0-9-]{0,62}\.)+[A-Za-z]{2,63}", domain):
+        console.print("[red]Error:[/red] --domain must be a valid hostname, for example app.example.com")
+        raise typer.Exit(1)
+
+
 def check_requirements() -> None:
     """Check that required tools are installed."""
     # Check for git
@@ -332,16 +350,7 @@ def create_vps_user(vps_host: str, service_name: str) -> tuple[str, str]:
         console.print("[red]Failed to set user password[/red]")
         raise typer.Exit(1)
     
-    # Step 3: Add to docker group
-    if not ssh_command(
-        f"root@{vps_host}",
-        f"usermod -aG docker {service_user}",
-        "Adding user to docker group..."
-    ):
-        console.print("[red]Failed to add user to docker group[/red]")
-        raise typer.Exit(1)
-    
-    # Step 4: Create directories
+    # Step 3: Create directories
     directories = [
         f"/apps/{service_name}",
         f"/persistent/{service_name}/data",
@@ -357,7 +366,7 @@ def create_vps_user(vps_host: str, service_name: str) -> tuple[str, str]:
             console.print(f"[red]Failed to create directory {directory}[/red]")
             raise typer.Exit(1)
     
-    # Step 5: Set ownership
+    # Step 4: Set ownership
     for directory in directories:
         if not ssh_command(
             f"root@{vps_host}",
@@ -367,7 +376,7 @@ def create_vps_user(vps_host: str, service_name: str) -> tuple[str, str]:
             console.print(f"[red]Failed to set ownership for {directory}[/red]")
             raise typer.Exit(1)
     
-    # Step 6: Set permissions
+    # Step 5: Set permissions
     for directory in directories:
         if not ssh_command(
             f"root@{vps_host}",
@@ -379,6 +388,86 @@ def create_vps_user(vps_host: str, service_name: str) -> tuple[str, str]:
     
     console.print(f"[green]✓[/green] Service user {service_user} created successfully!")
     return service_user, service_password
+
+
+def configure_native_service(vps_host: str, service_name: str, service_user: str,
+                             domain: Optional[str], app_port: int) -> None:
+    """Create systemd, sudoers, and optional Caddy config for a native service."""
+    console.print(f"\n[bold]Configuring native service runtime for {service_name}...[/bold]")
+
+    unit_name = f"{service_name}.service"
+    caddy_block = ""
+    caddy_reload = ""
+    if domain:
+        caddy_block = f"""
+mkdir -p /etc/caddy/apps /logs/caddy
+cat > /etc/caddy/apps/{service_name}.caddy <<'EOF_CADDY'
+{domain} {{
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:{app_port}
+    log {{
+        output file /logs/caddy/{service_name}.access.log
+    }}
+}}
+EOF_CADDY
+chmod 644 /etc/caddy/apps/{service_name}.caddy
+if command -v caddy >/dev/null 2>&1; then
+    caddy validate --config /etc/caddy/Caddyfile
+    systemctl reload caddy
+fi
+"""
+    else:
+        caddy_reload = f"""
+rm -f /etc/caddy/apps/{service_name}.caddy
+if command -v caddy >/dev/null 2>&1; then
+    systemctl reload caddy || true
+fi
+"""
+
+    command = f"""
+set -e
+cat > /etc/systemd/system/{unit_name} <<'EOF_UNIT'
+[Unit]
+Description={service_name} VPS service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={service_user}
+Group={service_user}
+WorkingDirectory=/apps/{service_name}
+Environment=APP_NAME={service_name}
+Environment=APP_PORT={app_port}
+Environment=ENVIRONMENT=production
+EnvironmentFile=-/apps/{service_name}/.env
+ExecStart=/apps/{service_name}/bin/start
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+SyslogIdentifier={service_name}
+
+[Install]
+WantedBy=multi-user.target
+EOF_UNIT
+
+cat > /etc/sudoers.d/{service_user} <<'EOF_SUDOERS'
+{service_user} ALL=(root) NOPASSWD: /usr/bin/systemctl restart {unit_name}, /usr/bin/systemctl status {unit_name}, /usr/bin/systemctl is-active {unit_name}, /usr/bin/journalctl -u {unit_name} *
+EOF_SUDOERS
+chmod 440 /etc/sudoers.d/{service_user}
+visudo -cf /etc/sudoers.d/{service_user}
+
+{caddy_block or caddy_reload}
+
+systemctl daemon-reload
+systemctl enable {unit_name}
+"""
+
+    if not ssh_command(f"root@{vps_host}", command, "Creating systemd/Caddy configuration..."):
+        console.print("[red]Failed to configure native service runtime[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓[/green] Native runtime configured for {service_name}")
 
 
 def suggest_free_port(vps_host: str, preferred_port: int = 3000) -> int:
@@ -473,8 +562,8 @@ def setup_local_files(local_path: Path, service_name: str, vps_manager_repo: str
         # Known text file extensions
         text_extensions = {
             '.yml', '.yaml', '.json', '.md', '.txt', '.js', '.py', '.toml', 
-            '.go', '.mod', '.sum', '.html', '.css', '.xml', '.env', '.gitignore',
-            '.sh', '.bat', '.ps1', '.dockerfile', '.sql', '.ini', '.cfg', '.conf'
+            '.go', '.mod', '.sum', '.rs', '.html', '.css', '.xml', '.env', '.gitignore',
+            '.sh', '.bat', '.ps1', '.sql', '.ini', '.cfg', '.conf'
         }
         
         # Check extension first
@@ -482,7 +571,7 @@ def setup_local_files(local_path: Path, service_name: str, vps_manager_repo: str
             return True
             
         # Check if Makefile or similar
-        if file_path.name.lower() in {'makefile', 'dockerfile', 'readme', 'license', 'changelog'}:
+        if file_path.name.lower() in {'makefile', 'readme', 'license', 'changelog'}:
             return True
             
         # For other files, try to detect if they're text by reading a small sample
@@ -603,6 +692,7 @@ def setup_github_repo(local_path: Path, service_name: str, repo_name: Optional[s
             console.print(f"[yellow]Warning:[/yellow] Failed to set secret {name}")
     
     variables = {
+        "APP_NAME": service_name,
         "APP_PORT": str(app_port or 3000),
         "VPS_MANAGER_REPO": vps_manager_repo,
     }
@@ -628,13 +718,13 @@ def write_dns_records_json(local_path: Path, domain: str, vps_ip: str, service_n
     infra_dir.mkdir(parents=True, exist_ok=True)
     records_path = infra_dir / "dns-records.json"
     
-    # Detect if domain is a subdomain (e.g., potato24.yarden-zamir.com)
+    # Detect if domain is a subdomain (e.g., app.example.com)
     # We'll assume TLD + one level is the zone (e.g., yarden-zamir.com)
     parts = domain.split('.')
     if len(parts) > 2:
         # Likely a subdomain - extract the zone and subdomain
         zone = '.'.join(parts[-2:])  # e.g., "yarden-zamir.com"
-        subdomain = '.'.join(parts[:-2])  # e.g., "potato24"
+        subdomain = '.'.join(parts[:-2])  # e.g., "app"
         
         records = [
             {"zone": zone, "name": subdomain, "type": "A", "values": [vps_ip]},
@@ -758,7 +848,7 @@ def run_dns_apply(repo_name: str, domain: str, provider: str) -> bool:
 
 
 def trigger_initial_deployment(local_path: Path, repo_name: str) -> bool:
-    """Generate lockfiles, commit all files and push to trigger initial deployment."""
+    """Prepare native artifacts, commit all files, and push to trigger deployment."""
     console.print(f"\n[green]✓[/green] Preparing initial deployment...")
     
     git = sh.git.bake(_cwd=str(local_path))
@@ -770,28 +860,28 @@ def trigger_initial_deployment(local_path: Path, repo_name: str) -> bool:
             TextColumn("[progress.description]{task.description}"),
             console=console,
         ) as progress:
-            # Generate lockfiles using Makefile
-            task = progress.add_task("Generating lockfiles and updating dependencies...", total=None)
+            # Install dependencies/build native artifacts using Makefile
+            task = progress.add_task("Preparing native deployment artifacts...", total=None)
             try:
-                make("update")
+                make("deploy-prepare")
                 progress.update(task, completed=True)
-                console.print(f"[green]✓[/green] Lockfiles generated successfully")
+                console.print(f"[green]✓[/green] Native deployment artifacts prepared")
             except sh.ErrorReturnCode as e:
                 progress.update(task, completed=True)
-                console.print(f"[yellow]Warning:[/yellow] Failed to generate lockfiles: {e}")
-                console.print("Continuing with deployment - lockfiles may need to be generated manually")
+                console.print(f"[yellow]Warning:[/yellow] Failed to prepare deployment artifacts: {e}")
+                console.print("Continuing with deployment - dependencies may need to be installed manually")
             except sh.CommandNotFound:
                 progress.update(task, completed=True)
-                console.print(f"[yellow]Warning:[/yellow] make command not found - skipping lockfile generation")
+                console.print(f"[yellow]Warning:[/yellow] make command not found - skipping deployment preparation")
             
-            # Add all files (including generated lockfiles)
+            # Add all files (including generated dependency/build artifacts)
             task = progress.add_task("Adding files to git...", total=None)
             git("add", ".")
             progress.update(task, completed=True)
             
             # Commit
             task = progress.add_task("Committing initial deployment...", total=None)
-            git("commit", "-m", "Initial deployment - service setup complete with lockfiles")
+            git("commit", "-m", "Initial deployment - native service setup complete")
             progress.update(task, completed=True)
             
             # Push to trigger deployment
@@ -866,6 +956,9 @@ def create_service(
         raise typer.Exit(1)
     
     # Validate inputs
+    validate_service_name(service_name)
+    validate_domain(domain)
+
     if domain and not dns_provider:
         console.print("[red]Error:[/red] --dns-provider is required when --domain is specified")
         raise typer.Exit(1)
@@ -985,9 +1078,12 @@ def create_service(
     else:
         console.print(f"[green]✓[/green] Port {free_port} looks free")
         chosen_port = free_port
-    
+
+    # Create systemd unit, sudo permissions, and optional Caddy route
+    configure_native_service(vps_host, service_name, service_user, domain, chosen_port)
+
     # Set up local files
-    setup_local_files(local_path, service_name, vps_manager_repo, template, domain, 
+    setup_local_files(local_path, service_name, vps_manager_repo, template, domain,
                      dns_provider.value if dns_provider else None)
     
     # Ensure .env has the chosen APP_PORT

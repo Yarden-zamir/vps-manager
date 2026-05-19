@@ -78,7 +78,8 @@ module "netlify" {
   count  = local.selected_provider == "netlify" ? 1 : 0
   source = "./modules/netlify"
 
-  records = local.netlify_records
+  records           = local.netlify_records
+  netlify_team_slug = var.netlify_team_slug
 }
 
 
@@ -87,6 +88,12 @@ variable "dns_provider_token" {
   description = "Generic DNS provider token (used for Netlify token)"
   type        = string
   sensitive   = true
+}
+
+variable "netlify_team_slug" {
+  description = "Optional Netlify team slug for zone creation"
+  type        = string
+  default     = ""
 }
 
 

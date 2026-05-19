@@ -1,14 +1,14 @@
 # Go/Gin Framework
 
-High-performance Go web service using Gin framework for ultra-fast API development.
+High-performance Go web service using Gin, systemd, and Caddy.
 
 ## Features
 
 1. Copy this template to create your new service
 2. Update `APP_NAME` in the files to match your service name
-3. Modify the application code in `src/`
+3. Modify the application code
 4. Set up GitHub repository secrets and variables
-5. Push to main branch to deploy!
+5. Push to main branch to deploy through systemd
 
 ## Required GitHub Secrets
 
@@ -48,12 +48,11 @@ DNS is managed via reusable Terraform workflows from `vps-manager`.
 
 ### Application Type
 
-This template is set up for Node.js. To use a different stack:
+This template runs natively under systemd:
 
-1. Replace `Dockerfile` with appropriate base image
-2. Update `docker-compose.yml` health check
-3. Replace `src/` with your application code
-4. Ensure you have a `/health` endpoint
+1. Keep `bin/start` as the production entrypoint
+2. Update `Makefile deploy-prepare` if your build changes
+3. Ensure you have a `/health` endpoint
 
 ### Environment Variables
 
@@ -63,30 +62,28 @@ This template is set up for Node.js. To use a different stack:
 
 ### Resource Limits
 
-Adjust CPU and memory limits in `docker-compose.yml`:
+Add systemd limits to the generated unit if needed:
 
 ```yaml
-deploy:
-  resources:
-    limits:
-      cpus: '1.0'
-      memory: 512M
+CPUQuota=100%
+MemoryMax=512M
 ```
 
 ## Development
 
 ```bash
 # Install dependencies
-npm install
+go mod download
 
 # Run locally
-npm run dev
+make run
 
 # Build
-npm run build
+make build
 
-# Run with Docker
-docker compose up --build
+# Build and run natively
+make deploy-prepare
+bin/start
 ```
 
 ## Health Check

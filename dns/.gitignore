@@ -1,27 +1,18 @@
-# Python virtual environment
-.venv/
-venv/
-env/
+# Terraform state and generated plans
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+.terraform.lock.hcl
 
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-
-# OctoDNS temporary files
-octodns-config.yaml
+# Local logs and generated reports
+*.log
 plan-output/
-plan.log
-apply.log
-plan-summary.md
-apply-summary.md
 
-# IDE
+# OS/editor files
+.DS_Store
+Thumbs.db
 .idea/
 .vscode/
 *.swp
 *.swo
-
-# OS
-.DS_Store
-Thumbs.db

@@ -1,160 +1,96 @@
 # VPS Manager
 
-A lightweight, Docker-based approach to deploying web applications and services to a VPS with minimal complexity and fast iteration cycles.
+A lightweight, native deployment toolkit for running web services on a VPS with systemd, Caddy and GitHub Actions.
 
-## 🎯 Philosophy
+## Philosophy
 
-- **Simplicity First**: Designed for hobby projects and rapid deployment cycles
-- **Docker Everything**: All services run in Docker containers with Docker Compose
-- **Build on VPS**: Images built directly on the server to leverage build cache
-- **Git-based Deploys**: Push to main = automatic deployment
-- **No Complex Orchestration**: Just Docker Compose, no Kubernetes or Swarm
+- **Native by default**: Services run directly on the VPS as systemd units.
+- **Caddy for ingress**: Public HTTPS routing is handled by Caddy, not per-app proxy config.
+- **Git-based deploys**: Push to `main` triggers deployment through GitHub Actions.
+- **Simple operations**: No Docker, Compose, Kubernetes, or Swarm required.
+- **Per-service isolation**: Each service gets its own Unix user and app/data/log directories.
 
-## 🚀 Quick Start
+## Quick Start
 
-1. **Bootstrap your VPS** (one-time setup):
-   ```bash
-   # Replace YOUR_GITHUB_USERNAME with your actual GitHub username
-   # Option 1: Interactive mode (download and run)
-   curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh -o bootstrap.sh
-   sudo bash bootstrap.sh
-   
-   # Option 2: Non-interactive mode (provide parameters)
-   curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh | sudo bash -s -- --email admin@example.com
-   
-   # Note: --domain is optional, only needed if you want Traefik dashboard access
-   ```
-
-2. **Create a new service** (run from your local machine):
-   ```bash
-   # Set required environment variables
-   export VPS_HOST="your.vps.ip"
-   export VPS_MANAGER_REPO="YOUR_GITHUB_USERNAME/vps-manager"
-   export DNS_PROVIDER_TOKEN="your-api-token"  # Required for DNS setup
-   
-   # Run the service creator (requires Python with uv)
-   # Option 1: If you have vps-manager cloned locally
-   /path/to/vps-manager/scripts/create-service.py myapp ./myapp \
-     --domain myapp.com --dns-provider cloudflare
-   
-   # Option 2: Download and run
-   curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/create-service.py -o create-service.py
-   chmod +x create-service.py
-   ./create-service.py myapp ./myapp --domain myapp.com --dns-provider cloudflare
-   
-   # The script will handle everything including DNS configuration!
-   ```
-
-3. **Deploy** by pushing to main branch - GitHub Actions handles the rest!
-
-## 📁 Repository Structure
-
-```
-vps-manager/
-├── README.md                    # This file
-├── docs/                        # Detailed documentation
-│   ├── setup-guide.md          # Complete VPS setup instructions
-│   ├── service-creation.md     # How to create new services
-│   └── troubleshooting.md      # Common issues and solutions
-├── template/                    # Template for new services
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   ├── .github/workflows/deploy.yml
-│   └── src/
-├── scripts/                     # Utility scripts
-│   ├── bootstrap.sh            # Initial VPS setup
-│   └── create-service.sh       # Service creation with user management
-└── traefik/                     # Reverse proxy configuration
-    └── docker-compose.yml
-```
-
-## 🔧 How It Works
-
-### Deployment Flow
-
-1. **Push to main** triggers GitHub Action
-2. Action **SSHs to VPS** using deploy keys
-3. **Replaces** `/apps/{appname}` with latest code
-4. **Injects** production environment variables
-5. **Builds** Docker image with commit SHA tag
-6. **Restarts** service with `docker compose up -d`
-
-### Directory Structure on VPS
-
-```
-/
-├── apps/           # Application code (replaced on deploy)
-│   └── myapp/
-├── persistent/     # Data that survives deploys
-│   └── myapp/
-│       └── sqlite/
-└── logs/           # Application logs
-    └── myapp/
-```
-
-### Networking
-
-- **Traefik** reverse proxy handles TLS and routing
-- Each app gets its own Docker network
-- Apps join shared `public` network for proxy access
-- Automatic Let's Encrypt certificates per service
-- Each service configures its own domain (no global domain needed)
-
-## 📋 Service Requirements
-
-Every service must:
-
-- ✅ Expose a `/health` endpoint
-- ✅ Include Docker Compose healthcheck
-- ✅ Set `restart: unless-stopped`
-- ✅ Define CPU/memory limits
-- ✅ Use commit SHA for image tags
-
-## 🔒 Security Approach
-
-**This setup prioritizes convenience over maximum security** - perfect for hobby projects!
-
-- Root account manages the VPS and creates services
-- Each service gets its own Unix user with password
-- Service isolation through separate user accounts
-- Basic security through Docker isolation
-- HTTPS automatically configured via Traefik
-
-## 🛠️ Common Commands
+0. Clone the repo
+1. Bootstrap your VPS:
 
 ```bash
-# View all running services
-docker ps
-
-# Check service logs
-docker logs -f myapp
-
-# Restart a service
-cd /apps/myapp && docker compose restart
-
-# Clean old images
-docker image prune -a
-
-# Check Traefik routing
-docker logs traefik
+curl -sSL https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/vps-manager/main/scripts/bootstrap.sh -o bootstrap.sh
+sudo bash bootstrap.sh --email admin@example.com
 ```
 
-## 📚 Documentation
+2. Create a new service from your local machine:
 
-- [Setup Guide](docs/setup-guide.md) - VPS bootstrap instructions
-- [Service Creation](docs/service-creation.md) - How to create services
-- [DNS Management](docs/dns-management.md) - Centralized DNS with OctoDNS
-- [Troubleshooting](docs/troubleshooting.md) - Common issues
+```bash
+export VPS_HOST="your.vps.ip"
+export VPS_MANAGER_REPO="YOUR_GITHUB_USERNAME/vps-manager"
+export DNS_PROVIDER_TOKEN="your-api-token"
 
-## ⚠️ Limitations
+/path/to/vps-manager/scripts/create-service.py myapp ./myapp \
+  --domain myapp.example.com \
+  --dns-provider cloudflare
+```
 
-This approach is designed for **simplicity and convenience**, not enterprise scale:
+3. Deploy by pushing to `main`.
 
-- No automatic backups
-- No database migrations  
-- No blue-green deployments
-- No rollback beyond `git revert`
-- **Security is relaxed by default** (password/root login enabled)
-- All Docker ports are publicly exposed
+## Repository Structure
 
-Perfect for hobby projects, prototypes, and small-scale applications where ease of use matters more than strict security!
+```text
+vps-manager/
+├── caddy/                      # Caddy reference config and docs
+├── dns/                        # Terraform DNS automation
+├── docs/                       # Detailed documentation
+├── scripts/
+│   ├── bootstrap.sh            # One-time VPS setup
+│   └── create-service.py       # Service creation/orchestration
+└── templates/
+    ├── template-base/          # Shared GitHub Actions and DNS workflow
+    ├── template-js-express/    # Bun + Express native service
+    ├── template-python-fastapi/# uv + FastAPI native service
+    ├── template-go-gin/        # Go + Gin native service
+    └── template-rust-axum/     # Rust + Axum starter docs
+```
+
+## Deployment Flow
+
+1. Push to `main` triggers the service repo deploy workflow.
+2. The workflow copies source to `/apps/{appname}` over SSH/SCP.
+3. The workflow writes `/apps/{appname}/.env`.
+4. `make deploy-prepare` installs dependencies or builds artifacts.
+5. `sudo systemctl restart {appname}.service` restarts the service.
+6. The workflow checks `http://127.0.0.1:{APP_PORT}/health`.
+7. Caddy serves `https://{APP_DOMAIN}` and proxies to the localhost port.
+
+## VPS Layout
+
+```text
+/
+├── apps/              # Application code replaced on deploy
+│   └── myapp/
+├── persistent/        # Data that survives deploys
+│   └── myapp/
+├── logs/              # Application/proxy logs
+│   ├── myapp/
+│   └── caddy/
+└── etc/
+    ├── systemd/system/myapp.service
+    └── caddy/apps/myapp.caddy
+```
+
+## Service Requirements
+
+- Provide an executable `bin/start` script.
+- Listen on `APP_PORT`.
+- Expose `/health` with HTTP 200 when healthy.
+- Keep persistent data under `/persistent/{APP_NAME}`.
+
+## DNS
+
+DNS is optional and handled through reusable Terraform workflows. Service repos own `infra/dns-records.json` and provide their own `DNS_PROVIDER_TOKEN`.
+
+Supported providers: Cloudflare, Netlify, DigitalOcean, and Linode.
+
+## Security Notes
+
+This setup prioritizes convenience for hobby projects and prototypes. It creates per-service users and uses HTTPS by default, but root/password SSH remains enabled by bootstrap for simple automation.

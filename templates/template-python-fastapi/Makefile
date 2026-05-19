@@ -1,5 +1,5 @@
 # Python/FastAPI with uv Makefile
-.PHONY: run update test clean help
+.PHONY: run update deploy-prepare test clean help
 
 # Default target
 .DEFAULT_GOAL := help
@@ -19,6 +19,9 @@ update: ## Install/update dependencies and generate lockfile
 	@echo "Installing dependencies with uv..."
 	uv sync
 	@echo "✓ Dependencies installed and uv.lock generated"
+
+deploy-prepare: update ## Prepare dependencies for native deployment
+	@echo "✓ Python service ready for systemd"
 
 test: ## Run tests
 	@echo "Running tests..."
