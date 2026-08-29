@@ -103,9 +103,30 @@ most of a surveyed bearing:
 | What you have | MAE |
 | --- | --- |
 | Nothing, direction derived | 0.268 |
-| One transition, from one visit | 0.125 |
-| Two transitions, opposite seasons | 0.108 |
+| One visit's transitions, summer | 0.125 |
+| Transitions from summer and winter | 0.108 |
 | The direction itself | 0.092 |
+
+A plain state, "at 14:00 that day it was in the shade", also grounds the direction,
+but far more weakly. A state only rules out the directions that predict the opposite,
+which is about half the circle. A transition is an equality: the sun passes the wall
+edge on twice a day, and the direction of the change picks which. Measured against the
+terrain-only starting point, over 24 random draws per sector:
+
+| What you logged | MAE |
+| --- | --- |
+| Nothing | 0.278 |
+| 1 state: date, time, sun or shade | 0.251 |
+| 2 states | 0.221 |
+| 4 states | 0.185 |
+| 8 states | 0.152 |
+| 16 states | 0.126 |
+| 32 states | 0.108 |
+| 1 transition, with its direction | 0.167 |
+
+One transition is worth about eight state logs. Both run into the same floor: even a
+perfect direction stops at 0.092, because a 30 m grid cannot produce partial shade
+across a face. Past that point, only better elevation data helps.
 
 Record which way it went, not only when. A single transition time has two solutions,
 one either side of solar noon, and the direction of travel separates them. With that,
@@ -186,6 +207,7 @@ uv run python scripts/fit_aspect.py            # what direction would fit, per s
 uv run python scripts/report.py                # the two result tables
 uv run python scripts/aspect_sensitivity.py    # the error budget
 uv run python scripts/fit_from_observation.py  # what one field observation is worth
+uv run python scripts/fit_from_states.py       # states against transitions
 uv run python scripts/validate_redrocks.py resolution
 ```
 
