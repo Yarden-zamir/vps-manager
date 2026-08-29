@@ -1,0 +1,7 @@
+cache/
+out/
+.venv/
+__pycache__/
+*.pyc
+data/sunbeta_truth.json
+data/il_coords.json
