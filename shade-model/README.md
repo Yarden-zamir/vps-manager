@@ -138,6 +138,7 @@ is good enough. That is a low bar. It does not need a survey.
 | Nearest OpenStreetMap `natural=cliff` way | 14 deg | none where mapped; 2 of 7 crags here | automatic inside `crag_aspects` |
 | Two points along the cliff on a satellite image | about 15 deg | 10 seconds per sector | `shade aspect --along lat,lon --along lat,lon` |
 | A photo taken at the foot of the sector | 10-20 deg, the phone compass | none beyond taking the photo | `shade aspect --photo IMG.jpg` |
+| Photos harvested from an open archive | 102 deg, useless. See below | none | `scripts/harvest_commons.py` |
 | One remembered transition at the crag | see below | one visit, no instrument | `shade aspect --saw DATE:sun@HH:MM` |
 
 The neighbour trick works because sectors are named points along a cliff, so their
@@ -164,6 +165,46 @@ is magnetic.
 
 The same photo also shows whether the wall was in the sun, and its timestamp says
 when, so one photo is both a heading and an observation.
+
+#### Harvesting headings instead of asking: tried, and it fails
+
+If a photo carries the direction, an open photo archive should carry a lot of them.
+Wikimedia Commons publishes full EXIF through its API and lets you search by position,
+so it was worth testing properly rather than assuming.
+
+`scripts/harvest_commons.py` searched 500 m around every sector of every Israeli crag,
+matched or not. In the whole country **seven photos carried a camera heading**: six at
+Timna, from an archaeological survey, and one near Beit Arye.
+
+`scripts/aspect_from_photos.py` then applied the rules and swept their thresholds. At
+the loosest setting that passes anything, 18 photo-sector pairs covered 16 sectors:
+
+| Direction from | Direction error | MAE |
+| --- | --- | --- |
+| Harvested photos | 102 deg | 0.545 |
+| Derived, no photos | - | 0.369 |
+| Fitted | 0 deg | 0.119 |
+
+Worse than using no photo at all. Three reasons, and the second is the one to remember:
+
+1. Being near a crag is not being a photo of it. Those six are pictures of copper
+   mining sites that happen to lie among the boulders.
+2. One photo was attributed to sixteen sectors. The give-away is in the output: the
+   same two headings, 154 and 233 degrees, repeat down the whole list. Proximity is
+   not aboutness, and no rule over position alone can tell them apart.
+3. R4 cannot be evaluated at 30 m. At a 3 degree tolerance nothing survives; at 10
+   degrees everything that passed R3 survives. It is a step, not a filter, because a
+   30 m horizon profile has no local structure to discriminate with. The same
+   resolution gap that forces the direction to come from outside the grid also stops
+   the grid from checking it.
+
+27crags was the other candidate corpus, and its photographs really are of the walls,
+but it strips EXIF and serves only derivatives. Nothing to read.
+
+So the mechanism holds and the sourcing does not. A photo taken deliberately at a
+sector, facing the rock, gives the direction to within the phone compass. No archive
+of such photos exists, and harvesting a general one produces confident nonsense.
+Collection has to be intentional.
 
 ### Asking a climber instead of a compass
 
@@ -306,6 +347,8 @@ uv run python scripts/aspect_sensitivity.py    # the error budget
 uv run python scripts/fit_from_observation.py  # what one field observation is worth
 uv run python scripts/fit_from_states.py       # states against transitions
 uv run python scripts/resolution_ladder.py     # what ground resolution buys
+uv run python scripts/harvest_commons.py       # camera headings from Wikimedia Commons
+uv run python scripts/aspect_from_photos.py    # and why harvested ones cannot be used
 uv run python scripts/validate_redrocks.py resolution
 ```
 
