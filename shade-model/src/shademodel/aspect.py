@@ -24,6 +24,7 @@ from .wall import WallConfig
 
 
 def strike_aspect(
+    patch: DemPatch,
     x: float,
     y: float,
     neighbour_x: np.ndarray,
@@ -51,13 +52,13 @@ def strike_aspect(
     pw = np.concatenate([[w.sum()], w])
     mx, my = np.average(px, weights=pw), np.average(py, weights=pw)
     cov = np.cov(np.vstack([px - mx, py - my]), aweights=pw, bias=True)
-    ex, ey = np.linalg.eigh(cov)[1][:, -1]  # strike direction
+    ex, ey = np.linalg.eigh(cov)[1][:, -1]  # strike direction, in grid coordinates
 
     group = np.radians(np.concatenate([downhill_deg[:1], downhill_deg[1:][near]]))
     ref = np.array([np.sin(group).mean(), np.cos(group).mean()])
     best, agree = None, -np.inf
     for sign in (1.0, -1.0):
-        cand = np.degrees(np.arctan2(sign * ey, -sign * ex)) % 360.0
+        cand = patch.to_true(np.degrees(np.arctan2(sign * ey, -sign * ex)))
         a = np.radians(cand)
         dot = ref @ np.array([np.sin(a), np.cos(a)])
         if dot > agree:
@@ -118,7 +119,8 @@ def crag_aspects(
         strike = None
         if mode in ("combined", "strike"):
             keep = np.arange(len(names)) != i
-            strike = strike_aspect(px[i], py[i], px[keep], py[keep], np.concatenate([[dh[i]], dh[keep]]),
+            strike = strike_aspect(patches[n], px[i], py[i], px[keep], py[keep],
+                                   np.concatenate([[dh[i]], dh[keep]]),
                                    radius_m=cfg.strike_radius_m, min_neighbours=cfg.min_neighbours)
 
         if osm and strike is not None:

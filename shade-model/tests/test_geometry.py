@@ -105,3 +105,30 @@ def test_east_facing_wall_turns_over_at_solar_noon():
     assert lit[0] and not lit[-1]
     turnover = hours[np.argmax(~lit)]
     assert turnover == pytest.approx(11.9, abs=0.4)  # solar noon at 35.3 E in winter time
+
+
+def test_aspect_from_a_cliff_line_picks_the_downhill_side():
+    """A cliff running north to south faces either east or west."""
+    from shademodel.observe import aspect_from_line
+
+    a, b = (31.8300, 35.3000), (31.8320, 35.3000)
+    assert aspect_from_line(31.831, 35.300, a, b, downhill_deg=80.0) == pytest.approx(90.0, abs=1.0)
+    assert aspect_from_line(31.831, 35.300, a, b, downhill_deg=260.0) == pytest.approx(270.0, abs=1.0)
+
+
+def test_aspect_from_line_rejects_two_points_on_top_of_each_other():
+    from shademodel.observe import aspect_from_line
+
+    with pytest.raises(ValueError):
+        aspect_from_line(31.831, 35.300, (31.8300, 35.3000), (31.83000, 35.30000), downhill_deg=90.0)
+
+
+def test_observation_parsing():
+    from shademodel.observe import parse_observation
+
+    o = parse_observation("2026-06-21:sun@12:15")
+    assert (o.day, o.hour, o.into) == (date(2026, 6, 21), pytest.approx(12.25), "sun")
+    whole = parse_observation("2026-12-21:shade")
+    assert whole.hour is None and whole.into == "shade"
+    with pytest.raises(ValueError):
+        parse_observation("2026-06-21:cloudy@12:15")

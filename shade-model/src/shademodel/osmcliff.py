@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 from pyproj import Transformer
 
-from .dem import CACHE, utm_crs
+from .dem import CACHE, grid_convergence_deg, utm_crs
 
 
 @dataclass(frozen=True)
@@ -63,7 +63,9 @@ def nearest_cliff(
     ways = fetch_cliffs(lat, lon)
     if not ways:
         return None
-    tf = Transformer.from_crs("EPSG:4326", utm_crs(lat, lon), always_xy=True)
+    crs = utm_crs(lat, lon)
+    convergence = grid_convergence_deg(crs, lat, lon)
+    tf = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
     sx, sy = tf.transform(lon, lat)
     best: CliffHit | None = None
     for way_id, pts in ways:
@@ -90,5 +92,5 @@ def nearest_cliff(
             bearing = float(np.degrees(np.arctan2(axis[0], axis[1])) % 360)
         else:
             bearing = float(np.degrees(np.arctan2(v[i, 0], v[i, 1])) % 360)
-        best = CliffHit((bearing + 90) % 360, float(d[i]), way_id)
+        best = CliffHit((bearing + 90 - convergence) % 360, float(d[i]), way_id)
     return best if best and best.distance_m <= max_distance_m else None

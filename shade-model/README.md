@@ -58,23 +58,67 @@ Israel has no open metre-scale elevation model. Copernicus GLO-30 is the ceiling
 At Ein Fara its steepest cell is 42 degrees, in a canyon whose walls are vertical
 and 40 m tall. The canyon is in the data; the cliff is not.
 
-## Where the wall faces
+## Getting the wall direction
 
-This is the whole remaining problem. Three automatic sources, measured against the
-direction that best reproduces Sun Beta:
+This is the whole remaining problem, and everything below is measured on the same 43
+sectors.
 
-| Source | Median error | Covers |
-| --- | --- | --- |
-| Downhill direction of the smoothed landform | 49 deg | Everywhere. Only a fallback. |
-| Line traced by neighbouring sectors of the same crag | 10 deg at Ein Fara, unusable for scattered boulders | Crags whose sectors run along one cliff |
-| Nearest OpenStreetMap `natural=cliff` way | 14 deg | 2 of the 7 Israeli crags tested |
+### How accurate does it need to be
 
-`shademodel.aspect` takes the best available and uses the terrain direction only to
-settle which of the two sides of a line the wall faces.
+Perturb the best-fitting direction and score the result. Roughly a minute and a half
+of timing error per degree:
+
+| Error in the direction | MAE | Sun arrives | Sun leaves |
+| --- | --- | --- | --- |
+| 0 deg | 0.092 | 0 min | 15 min |
+| 10 deg | 0.126 | 15 min | 30 min |
+| 15 deg | 0.146 | 15 min | 30 min |
+| 20 deg | 0.167 | 30 min | 45 min |
+| 30 deg | 0.212 | 45 min | 45 min |
+| 45 deg | 0.279 | 75 min | 75 min |
+
+Half an hour is close enough to plan a day around, so anything inside about 15 degrees
+is good enough. That is a low bar. It does not need a survey.
+
+### Four ways to get it
+
+| Method | Error | Effort | Command |
+| --- | --- | --- | --- |
+| Downhill direction of the landform | about 50 deg | none | `shade aspect --lat --lon` |
+| Line traced by the crag's other sectors | 12-20 deg where sectors run along one cliff, useless for scattered boulders | none | automatic inside `crag_aspects` |
+| Nearest OpenStreetMap `natural=cliff` way | 14 deg | none where mapped; 2 of 7 crags here | automatic inside `crag_aspects` |
+| Two points along the cliff on a satellite image | about 15 deg | 10 seconds per sector | `shade aspect --along lat,lon --along lat,lon` |
+| One remembered transition at the crag | see below | one visit, no instrument | `shade aspect --saw DATE:sun@HH:MM` |
 
 The neighbour trick works because sectors are named points along a cliff, so their
 local trend is the cliff's strike. It fails where sectors are separate boulders and
 towers, which is why Timna and Yonim score worst.
+
+### Asking a climber instead of a compass
+
+Nobody remembers a bearing. People do remember "it came into the sun about quarter
+past twelve". Search the directions that reproduce that, and one such memory is worth
+most of a surveyed bearing:
+
+| What you have | MAE |
+| --- | --- |
+| Nothing, direction derived | 0.268 |
+| One transition, from one visit | 0.125 |
+| Two transitions, opposite seasons | 0.108 |
+| The direction itself | 0.092 |
+
+Record which way it went, not only when. A single transition time has two solutions,
+one either side of solar noon, and the direction of travel separates them. With that,
+Ein Fara's Jeremiah sector fits to 222 degrees from one June observation against 225
+from the full-year fit; a second winter observation narrows the band of directions
+that fit from 30 degrees to 8.
+
+```sh
+shade aspect --lat 31.833828 --lon 35.302755 --tz Asia/Jerusalem \
+  --saw 2026-06-21:sun@12:15 --saw 2026-12-21:sun@08:30
+```
+
+The reported spread says whether another observation would pay.
 
 ## Results
 
@@ -84,20 +128,20 @@ published curves on their 15 minute grid. Shade fraction runs 0 (full sun) to 1
 
 | Crag | Sectors | MAE, direction derived | MAE, direction supplied |
 | --- | --- | --- | --- |
-| Shilat | 2 | 0.152 | 0.002 |
-| Zanoah | 3 | 0.129 | 0.014 |
-| Beit Arye | 4 | 0.187 | 0.019 |
-| Yonim | 5 | 0.365 | 0.076 |
-| Gita East | 6 | 0.178 | 0.103 |
-| Timna | 16 | 0.369 | 0.123 |
-| Ein Fara | 7 | 0.178 | 0.136 |
-| **All** | **43** | **0.267** | **0.094** |
+| Shilat | 2 | 0.146 | 0.002 |
+| Zanoah | 3 | 0.141 | 0.014 |
+| Beit Arye | 4 | 0.187 | 0.020 |
+| Yonim | 5 | 0.366 | 0.076 |
+| Gita East | 6 | 0.181 | 0.102 |
+| Timna | 16 | 0.369 | 0.119 |
+| Ein Fara | 7 | 0.179 | 0.136 |
+| **All** | **43** | **0.268** | **0.092** |
 
 Median error in the times a climber reads off the chart:
 
 | | Sun arrives | Sun leaves |
 | --- | --- | --- |
-| Direction derived | 19 min | 45 min |
+| Direction derived | 22 min | 60 min |
 | Direction supplied | 0 min | 15 min |
 
 ### Control: what metre-scale data buys
@@ -124,23 +168,28 @@ Beta at MAE 0.09, with many sectors at 0.00 to 0.03. Two facts fall out:
 
 ```sh
 uv sync
-uv run shade --lat 31.833828 --lon 35.302755 --tz Asia/Jerusalem --date 2026-06-21 --aspect 225
-uv run shade --lat 36.1555975 --lon -115.4361525 --tz America/Los_Angeles --date 2026-06-21 --lidar
+uv run shade times --lat 31.833828 --lon 35.302755 --tz Asia/Jerusalem --date 2026-06-21 --aspect 225
+uv run shade times --lat 36.1555975 --lon -115.4361525 --tz America/Los_Angeles --date 2026-06-21 --lidar
+uv run shade aspect --lat 31.833828 --lon 35.302755 --tz Asia/Jerusalem --saw 2026-06-21:sun@12:15
 uv run pytest
 ```
 
 Omit `--aspect` to derive the direction from the terrain, which is the weakest source.
 
-Reproduce the measurements:
+Reproduce the measurements, in this order:
 
 ```sh
 uv run python scripts/scrape_sunbeta.py israel data/sunbeta_truth.json
 uv run python scripts/scrape_27crags.py data/il_coords.json
 uv run python scripts/validate_israel.py terrain strike osm combined
-uv run python scripts/fit_aspect.py          # what direction would fit, per sector
-uv run python scripts/report.py              # the tables above
+uv run python scripts/fit_aspect.py            # what direction would fit, per sector
+uv run python scripts/report.py                # the two result tables
+uv run python scripts/aspect_sensitivity.py    # the error budget
+uv run python scripts/fit_from_observation.py  # what one field observation is worth
 uv run python scripts/validate_redrocks.py resolution
 ```
+
+`fit_aspect.py` writes `out/israel_fit.json`, which the two scripts after it read.
 
 The reference curves belong to Sun Beta. The scrapers stay in the repository; their
 output does not.
@@ -159,9 +208,9 @@ Elevation tiles, horizon tables and OSM extracts cache under `cache/`. Set
 
 ## Next
 
-1. **Ask for one number.** A single compass direction per sector, from a guidebook,
-   a topo photo or a phone compass, takes the error from 0.27 to 0.09. That is a small
-   fraction of the work Sun Beta does per sector, for the same accuracy.
+1. **Collect the direction, cheaply.** Two clicks on a satellite image per sector, or
+   one remembered transition per sector, both land inside the 15 degree budget. That
+   is a small fraction of the work Sun Beta does per sector, for the same accuracy.
 2. **Buy the Survey of Israel DTM.** At 1-5 m the facet model runs unattended, as
    Red Rocks shows.
 3. **Improve the strike estimate.** Route-level positions, where a database has them,

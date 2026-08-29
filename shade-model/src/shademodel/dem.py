@@ -24,7 +24,13 @@ CACHE.mkdir(parents=True, exist_ok=True)
 
 @dataclass(frozen=True)
 class DemPatch:
-    """Elevation grid in a projected metric CRS. Row 0 is the north edge."""
+    """Elevation grid in a projected metric CRS. Row 0 is the north edge.
+
+    Grid north is not true north. The sun's azimuth is a true bearing, so every
+    direction taken from or given to this grid has to be corrected by the grid
+    convergence. It varies by less than half a degree over a patch, so one value
+    at the centre is enough.
+    """
 
     z: np.ndarray  # metres, shape (rows, cols), NaN where no data
     x0: float  # easting of the centre of column 0
@@ -32,6 +38,15 @@ class DemPatch:
     pixel: float  # metre per pixel, square
     crs: CRS
     source: str
+    convergence: float = 0.0  # grid bearing of true north, degrees
+
+    def to_true(self, grid_bearing):
+        """Convert a bearing measured from grid north to one from true north."""
+        return (grid_bearing - self.convergence) % 360.0
+
+    def to_grid(self, true_bearing):
+        """Convert a bearing measured from true north to one from grid north."""
+        return (true_bearing + self.convergence) % 360.0
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -57,6 +72,14 @@ def to_utm(lat: float, lon: float) -> tuple[CRS, float, float]:
     tf = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
     x, y = tf.transform(lon, lat)
     return crs, x, y
+
+
+def grid_convergence_deg(crs: CRS, lat: float, lon: float) -> float:
+    """Grid bearing of true north at a point. Add it to a true bearing to get a grid one."""
+    tf = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
+    x0, y0 = tf.transform(lon, lat)
+    x1, y1 = tf.transform(lon, min(lat + 0.01, 89.99))
+    return float(np.degrees(np.arctan2(x1 - x0, y1 - y0)))
 
 
 def _cached(key: str, suffix: str, produce) -> Path:
@@ -107,7 +130,8 @@ def fetch_3dep(lat: float, lon: float, half_m: float, pixel: float = 1.0, snap_m
             z[z == nodata] = np.nan
         z[z < -1000] = np.nan
         t = ds.transform
-        return DemPatch(z, t.c + t.a / 2, t.f + t.e / 2, abs(t.a), crs, "USGS 3DEP 1m")
+        return DemPatch(z, t.c + t.a / 2, t.f + t.e / 2, abs(t.a), crs, "USGS 3DEP 1m",
+                        grid_convergence_deg(crs, lat, lon))
 
 
 def copernicus_tile(lat: int, lon: int) -> Path | None:
@@ -151,9 +175,11 @@ def fetch_copernicus(
     cx = round(cx / snap) * snap
     cy = round(cy / snap) * snap
     cached = CACHE / f"cop_{crs.to_epsg()}_{cx:.0f}_{cy:.0f}_{half_m:.0f}_{pixel:g}.npy"
+    convergence = grid_convergence_deg(crs, lat, lon)
     if cached.exists():
         z = np.load(cached)
-        return DemPatch(z, cx - half_m + pixel / 2, cy + half_m - pixel / 2, pixel, crs, "Copernicus GLO-30")
+        return DemPatch(z, cx - half_m + pixel / 2, cy + half_m - pixel / 2, pixel, crs,
+                        "Copernicus GLO-30", convergence)
     deg_pad = half_m / 111000.0 * 1.6 + 0.02
     tiles = sorted(
         {
@@ -189,4 +215,5 @@ def fetch_copernicus(
     if not got:
         raise RuntimeError(f"no Copernicus tile covers {lat},{lon}")
     np.save(cached, dst)
-    return DemPatch(dst, cx - half_m + pixel / 2, cy + half_m - pixel / 2, pixel, crs, "Copernicus GLO-30")
+    return DemPatch(dst, cx - half_m + pixel / 2, cy + half_m - pixel / 2, pixel, crs,
+                    "Copernicus GLO-30", convergence)

@@ -92,7 +92,7 @@ def build_sector(name, lat, lon, tz, config: SectorConfig | None = None, fetch=f
     patch = fetch(lat, lon, cfg.patch_half_m, cfg.pixel_m)
     _, cx, cy = to_utm(lat, lon)
     slope = T.slope_deg(patch)
-    n = T.normals(patch)
+    n = T.to_true_north(T.normals(patch), patch)
     gx, gy = patch.xy()
     dist = np.hypot(gx - cx, gy - cy)
 

@@ -38,7 +38,8 @@ if __name__ == "__main__":
             wall = build_wall(name, lat, lon, TZ, cfg)
             best = min(((score(wall, area, name, a, d), a, d)
                         for a in np.arange(0, 360, 5.0) for d in (60, 75, 90)), key=lambda t: t[0])
-            got, src = auto[(lat, lon)]
+            estimate = auto[(lat, lon)]
+            got, src = estimate.degrees, estimate.source
             delta = abs((best[1] - got + 180) % 360 - 180)
             rows.append(dict(area=area, sector=name, mae_fit=best[0], aspect_fit=best[1], dip_fit=best[2],
                              aspect_auto=got, aspect_err=delta, source=src))

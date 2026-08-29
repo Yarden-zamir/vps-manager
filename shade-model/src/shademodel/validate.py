@@ -31,11 +31,17 @@ def on_grid(hours: np.ndarray, values: np.ndarray, grid: np.ndarray) -> np.ndarr
 
 def crossing(grid: np.ndarray, curve: np.ndarray, level: float = 0.5) -> list[float]:
     """Times where the curve crosses a level, linearly interpolated."""
+    return [t for t, _ in signed_crossings(grid, curve, level)]
+
+
+def signed_crossings(grid: np.ndarray, curve: np.ndarray, level: float = 0.5) -> list[tuple[float, str]]:
+    """Crossing times with the direction of travel: into the sun, or into the shade."""
     out = []
     for i in range(curve.size - 1):
         a, b = curve[i], curve[i + 1]
         if (a - level) * (b - level) < 0:
-            out.append(float(grid[i] + (level - a) / (b - a) * (grid[i + 1] - grid[i])))
+            t = float(grid[i] + (level - a) / (b - a) * (grid[i + 1] - grid[i]))
+            out.append((t, "shade" if b > a else "sun"))
     return out
 
 

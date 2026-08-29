@@ -30,9 +30,18 @@ def slope_deg(patch: DemPatch) -> np.ndarray:
 
 
 def aspect_deg(patch: DemPatch) -> np.ndarray:
-    """Compass direction the surface faces, degrees clockwise from north."""
+    """Compass direction the surface faces, degrees clockwise from true north."""
     n = normals(patch)
-    return np.degrees(np.arctan2(n[..., 0], n[..., 1])) % 360.0
+    return patch.to_true(np.degrees(np.arctan2(n[..., 0], n[..., 1])))
+
+
+def to_true_north(vectors: np.ndarray, patch: DemPatch) -> np.ndarray:
+    """Rotate the horizontal part of grid-aligned vectors onto true north."""
+    a = np.radians(-patch.convergence)
+    east, north = vectors[..., 0], vectors[..., 1]
+    return np.stack([east * np.cos(a) + north * np.sin(a),
+                     -east * np.sin(a) + north * np.cos(a),
+                     vectors[..., 2]], axis=-1)
 
 
 def landform_aspect(patch: DemPatch, x: float, y: float, smooth_m: float) -> float:
@@ -42,7 +51,7 @@ def landform_aspect(patch: DemPatch, x: float, y: float, smooth_m: float) -> flo
     sm = gaussian_filter(z, sigma)
     dzdy_rows, dzdx = np.gradient(sm, patch.pixel)
     r, c = patch.rowcol(x, y)
-    return float(np.degrees(np.arctan2(-dzdx[r, c], dzdy_rows[r, c])) % 360.0)
+    return float(patch.to_true(np.degrees(np.arctan2(-dzdx[r, c], dzdy_rows[r, c]))))
 
 
 def sample(patch: DemPatch, x: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -93,14 +102,14 @@ def horizon(
     r_stop: float,
     ratio: float = 1.05,
 ) -> np.ndarray:
-    """Largest sky-blocking angle per point and azimuth, in degrees.
+    """Largest sky-blocking angle per point and true-north azimuth, in degrees.
 
     Marches outward over the patch and keeps the steepest line of sight. A point
     that sits on a wall sees the wall above it, so this one pass covers both the
     face's own shape and shadows cast by anything around it.
     """
     radii = ray_radii(r_start, r_stop, ratio)
-    az = np.radians(azimuths).astype(np.float32)
+    az = np.radians(patch.to_grid(np.asarray(azimuths, float))).astype(np.float32)
     sin_az, cos_az = np.sin(az), np.cos(az)
     px = px.astype(np.float64)
     py = py.astype(np.float64)
