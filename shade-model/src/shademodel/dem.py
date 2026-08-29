@@ -58,6 +58,23 @@ class DemPatch:
         y = self.y0 - self.pixel * np.arange(rows)
         return np.meshgrid(x, y)
 
+    def coarsen(self, factor: int) -> "DemPatch":
+        """Average down to a coarser grid, the way a coarser sensor would see it.
+
+        Used to ask what a given ground resolution is worth, holding the source
+        and the terrain fixed.
+        """
+        if factor <= 1:
+            return self
+        rows, cols = self.z.shape
+        r, c = rows // factor * factor, cols // factor * factor
+        block = self.z[:r, :c].reshape(r // factor, factor, c // factor, factor)
+        z = np.nanmean(block, axis=(1, 3))
+        pixel = self.pixel * factor
+        return DemPatch(z, self.x0 + (factor - 1) * self.pixel / 2,
+                        self.y0 - (factor - 1) * self.pixel / 2,
+                        pixel, self.crs, f"{self.source} at {pixel:g} m", self.convergence)
+
     def rowcol(self, x: float, y: float) -> tuple[int, int]:
         return int(round((self.y0 - y) / self.pixel)), int(round((x - self.x0) / self.pixel))
 

@@ -50,9 +50,33 @@ Two ways to get layer 3, depending on the elevation data:
 | USGS 3DEP | 1 m lidar | USA | Resolves the wall. Facet model works end to end. |
 | Copernicus GLO-30 | 30 m | Global, free, no key | Valley shape and skyline. Not the wall. |
 | PNOA / swissALTI3D / IGN and other national lidar | 0.5-2 m | Parts of Europe | Same as 3DEP where it exists. |
-| Survey of Israel DTM | 1-5 m | Israel | Sold, not open. The upgrade that would close the gap. |
+| Survey of Israel DTM | 1-5 m | Israel | Sold through TopoCad, not open. Price not published; ask them. |
 | TanDEM-X 12 m | 12 m | Global | Free for research on application to DLR. Not automatable. |
 | OpenStreetMap `natural=cliff` | line geometry | Patchy | Cliff strike, which is the missing wall direction. |
+
+### Paying for elevation data
+
+List prices per square kilometre, from the Apollo Mapping DEM price list of 12
+December 2025. All of these cover Israel.
+
+| Product | Resolution | Vertical accuracy | Price per km2 | Minimum |
+| --- | --- | --- | --- | --- |
+| WorldDEM 12 m DSM | 12 m | < 1.4 m | $6.25 | 100 km2 |
+| AW3D Standard DSM level 2 | 5 m | <= 7 m | $5.00 | 400 km2 |
+| WorldDEM Neo DSM | 5 m | < 4 m | $8.75 | 100 km2 |
+| AW3D Standard DSM level 2 | 2.5 m | <= 7 m | $7.00 | 400 km2 |
+| Maxar Vivid Terrain DSM | 0.5 m | <= 3 m | $25.00 | 100 km2, 25 km2 per polygon |
+| Airbus Elevation1 DSM | 1 m | <= 10 m, <= 1.5 m with control points | $47.50 | 100 km2 |
+
+Read those against the resolution table below. Anything 2 m or coarser leaves an
+Israeli crag wall out of the data, so it buys a slightly better horizon and nothing
+else. Only the sub-metre products put the face in the grid, and even they are 2.5D:
+a raster cannot hold an overhang at any price.
+
+A drone beats all of them for this particular job. A consumer aircraft and free
+photogrammetry produce a centimetre-scale mesh of one crag in an evening, overhangs
+included, which is the only thing that moves the 0.092 floor. Check the flight rules
+first: several Israeli crags sit in nature reserves or restricted airspace.
 
 Israel has no open metre-scale elevation model. Copernicus GLO-30 is the ceiling.
 At Ein Fara its steepest cell is 42 degrees, in a canyon whose walls are vertical
@@ -164,6 +188,32 @@ Median error in the times a climber reads off the chart:
 | --- | --- | --- |
 | Direction derived | 22 min | 60 min |
 | Direction supplied | 0 min | 15 min |
+
+### What ground resolution buys
+
+Averaging the Red Rocks 1 m lidar down to coarser cells holds the terrain and the
+source fixed and changes only the resolution. Five sectors, six dates:
+
+| Resolution | MAE, direction held fixed | MAE, direction taken from the grid |
+| --- | --- | --- |
+| 1 m | 0.120 | 0.216 |
+| 2 m | 0.125 | 0.221 |
+| 5 m | 0.137 | 0.239 |
+| 10 m | 0.140 | 0.291 |
+| 20 m | 0.138 | 0.338 |
+| 30 m | 0.144 | 0.348 |
+
+Hold the wall direction fixed and resolution hardly matters: 1 m to 30 m costs 0.024.
+The skyline and the valley walls that cast the shadows are large things, and a coarse
+grid still holds them. Everything resolution buys, it buys through the direction.
+
+That is worth knowing before paying for elevation data, because two clicks on a
+satellite image already put the direction inside 15 degrees for nothing.
+
+The right-hand column is pessimistic for these particular sectors: Red Rocks is a set
+of slot corridors with walls facing opposite ways, so no single plane fits them and
+the fitted direction it is scored against is a compromise. Use the left-hand column
+for the resolution question and the Israeli tables for the accuracy question.
 
 ### Control: what metre-scale data buys
 
