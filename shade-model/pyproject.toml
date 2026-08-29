@@ -29,5 +29,6 @@ packages = ["src/shademodel"]
 
 [dependency-groups]
 dev = [
+    "piexif>=1.1.3",
     "pytest>=9.1.1",
 ]

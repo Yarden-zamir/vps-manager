@@ -1,6 +1,6 @@
 """Contract tests for the parts that can break silently."""
 
-from datetime import date
+from datetime import date, datetime
 
 import numpy as np
 import pytest
@@ -132,3 +132,55 @@ def test_observation_parsing():
     assert whole.hour is None and whole.into == "shade"
     with pytest.raises(ValueError):
         parse_observation("2026-06-21:cloudy@12:15")
+
+
+def _phone_photo(path, lat, lon, heading, ref=b"T"):
+    """An image with the EXIF a phone camera writes."""
+    import piexif
+    from PIL import Image
+
+    def dms(v):
+        v = abs(v)
+        d = int(v)
+        m = int((v - d) * 60)
+        return ((d, 1), (m, 1), (int(round((v - d - m / 60) * 3600 * 10000)), 10000))
+
+    gps = {
+        piexif.GPSIFD.GPSLatitudeRef: b"N" if lat >= 0 else b"S",
+        piexif.GPSIFD.GPSLatitude: dms(lat),
+        piexif.GPSIFD.GPSLongitudeRef: b"E" if lon >= 0 else b"W",
+        piexif.GPSIFD.GPSLongitude: dms(lon),
+        piexif.GPSIFD.GPSImgDirectionRef: ref,
+        piexif.GPSIFD.GPSImgDirection: (int(heading * 100), 100),
+    }
+    exif = {"0th": {}, "Exif": {piexif.ExifIFD.DateTimeOriginal: b"2026:06:21 12:20:00"},
+            "GPS": gps, "1st": {}, "thumbnail": None}
+    Image.new("RGB", (16, 16), "grey").save(path, exif=piexif.dump(exif))
+    return str(path)
+
+
+def test_photo_heading_is_the_opposite_of_the_wall_direction(tmp_path):
+    from shademodel.photo import read_photo
+
+    f = read_photo(_phone_photo(tmp_path / "a.jpg", 31.833828, 35.302755, 42.0))
+    assert f.lat == pytest.approx(31.833828, abs=1e-5)
+    assert f.lon == pytest.approx(35.302755, abs=1e-5)
+    assert f.camera_deg == pytest.approx(42.0, abs=0.1)
+    assert f.facing_deg == pytest.approx(222.0, abs=0.1)
+    assert f.taken == datetime(2026, 6, 21, 12, 20)
+
+
+def test_magnetic_heading_takes_the_declination(tmp_path):
+    from shademodel.photo import read_photo
+
+    path = _phone_photo(tmp_path / "m.jpg", 31.83, 35.30, 42.0, ref=b"M")
+    assert read_photo(path, declination_deg=4.6).camera_deg == pytest.approx(46.6, abs=0.1)
+    assert read_photo(path).direction_ref == "M"
+
+
+def test_photos_of_one_wall_average(tmp_path):
+    from shademodel.photo import combine, read_photo
+
+    fixes = [read_photo(_phone_photo(tmp_path / f"{i}.jpg", 31.83, 35.30, h))
+             for i, h in enumerate((350.0, 10.0))]
+    assert combine(fixes) == pytest.approx(180.0, abs=0.5)

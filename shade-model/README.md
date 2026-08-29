@@ -73,6 +73,31 @@ Israeli crag wall out of the data, so it buys a slightly better horizon and noth
 else. Only the sub-metre products put the face in the grid, and even they are 2.5D:
 a raster cannot hold an overhang at any price.
 
+### Other routes to better data
+
+Not everything worth having is on a price list.
+
+- **ESA Third Party Missions.** ESA gives free access to the Pléiades and Pléiades Neo
+  archive and to new tasking, in mono, stereo and tri-stereo, on an accepted project
+  proposal. Non-commercial use only, evaluated in about nine weeks. Tri-stereo at 30 cm
+  is the same data that costs $47.50 per km2 commercially.
+- **TanDEM-X science proposal.** DLR grants free use of the 12 m TanDEM-X DEM over up
+  to 100,000 km2 to accepted scientific proposals. Check whether a call is open; there
+  was no announcement of opportunity when this was written.
+- **ICESat-2 ATL03.** Free NASA laser altimetry, a photon every 0.7 m along track with
+  centimetre height accuracy, through NSIDC or OpenAltimetry. The tracks are kilometres
+  apart, so it is a set of profiles rather than a surface. It cannot give a wall
+  direction, but where a track crosses a crag's valley it measures the depth the 30 m
+  grid smooths away.
+- **Photos that already exist.** Structure from motion over the topo photographs a crag
+  already has reconstructs the face in 3D, overhangs included. Scale and orientation
+  need one anchor, which the EXIF above supplies.
+- **The people who hold Israeli data.** The Geological Survey of Israel scans cliffs for
+  rockfall hazard, and an Israeli university with a Survey of Israel licence can use the
+  national DTM for research. Both are worth an email; neither is a download.
+- **data.gov.il.** Searched for elevation datasets and found nothing usable. The Survey
+  of Israel sells through TopoCad rather than publishing.
+
 A drone beats all of them for this particular job. A consumer aircraft and free
 photogrammetry produce a centimetre-scale mesh of one crag in an evening, overhangs
 included, which is the only thing that moves the 0.092 floor. Check the flight rules
@@ -112,11 +137,33 @@ is good enough. That is a low bar. It does not need a survey.
 | Line traced by the crag's other sectors | 12-20 deg where sectors run along one cliff, useless for scattered boulders | none | automatic inside `crag_aspects` |
 | Nearest OpenStreetMap `natural=cliff` way | 14 deg | none where mapped; 2 of 7 crags here | automatic inside `crag_aspects` |
 | Two points along the cliff on a satellite image | about 15 deg | 10 seconds per sector | `shade aspect --along lat,lon --along lat,lon` |
+| A photo taken at the foot of the sector | 10-20 deg, the phone compass | none beyond taking the photo | `shade aspect --photo IMG.jpg` |
 | One remembered transition at the crag | see below | one visit, no instrument | `shade aspect --saw DATE:sun@HH:MM` |
 
 The neighbour trick works because sectors are named points along a cliff, so their
 local trend is the cliff's strike. It fails where sectors are separate boulders and
 towers, which is why Timna and Yonim score worst.
+
+### The photo is already the measurement
+
+A photo taken from the foot of a sector, facing the rock, carries in its EXIF the
+position, the compass heading, and the time. The heading turned by 180 degrees is the
+direction the wall faces. Nobody has to record anything; the file already holds it.
+
+```sh
+shade aspect --photo IMG_4213.jpg                       # position and direction, both from EXIF
+shade aspect --photo IMG_4213.jpg --tz Asia/Jerusalem \
+  --saw 2026-06-21:sun@12:15                            # the heading seeds the observation fit
+```
+
+A phone compass is good to roughly 10 to 20 degrees, which is inside the budget above.
+Two things to watch. A photo taken side on to the wall reports a direction along the
+cliff, not into it, so shoot square to the rock. And a heading written against magnetic
+north needs `--declination`, about 4.6 east over Israel; the tool says when the EXIF
+is magnetic.
+
+The same photo also shows whether the wall was in the sun, and its timestamp says
+when, so one photo is both a heading and an observation.
 
 ### Asking a climber instead of a compass
 
@@ -258,6 +305,7 @@ uv run python scripts/report.py                # the two result tables
 uv run python scripts/aspect_sensitivity.py    # the error budget
 uv run python scripts/fit_from_observation.py  # what one field observation is worth
 uv run python scripts/fit_from_states.py       # states against transitions
+uv run python scripts/resolution_ladder.py     # what ground resolution buys
 uv run python scripts/validate_redrocks.py resolution
 ```
 

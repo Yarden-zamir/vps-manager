@@ -95,18 +95,20 @@ def aspect_from_observations(
     cfg: WallConfig | None = None,
     step_deg: float = 2.0,
     tolerance_h: float = 0.25,
+    prior_deg: float | None = None,
 ) -> AspectFit:
     """Wall direction that reproduces what someone saw at the crag.
 
-    Ties are broken towards the terrain direction, which is poor but never wrong by
-    more than about ninety degrees. `spread_deg` reports how wide the surviving band
-    is: a wide band means one more observation, in another season, would pay.
+    Ties are broken towards `prior_deg`, or towards the terrain direction when none is
+    given. A photo's compass heading makes a far better prior than the terrain does.
+    `spread_deg` reports how wide the surviving band is: a wide band means one more
+    observation, in another season, would pay.
     """
     cfg = cfg or WallConfig()
     if not observations:
         raise ValueError("no observations given")
     wall = build_wall("fit", lat, lon, tz, cfg, aspect_deg=0.0)
-    prior = terrain_aspect(lat, lon, cfg)
+    prior = terrain_aspect(lat, lon, cfg) if prior_deg is None else prior_deg % 360.0
     candidates = np.arange(0, 360, step_deg)
 
     errors = []

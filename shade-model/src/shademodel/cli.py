@@ -11,6 +11,7 @@ from .dem import fetch_3dep, fetch_copernicus
 from .model import SectorConfig, build_sector
 from .model import shade_curve as facet_shade_curve
 from .observe import aspect_from_line, aspect_from_observations, parse_observation, terrain_aspect
+from .photo import combine, read_photo
 from .wall import WallConfig, build_wall, shade_curve
 
 
@@ -54,17 +55,36 @@ def _times(args) -> int:
 
 
 def _aspect(args) -> int:
+    from_photo = None
+    if args.photo:
+        fixes = [read_photo(path, args.declination) for path in args.photo]
+        for f in fixes:
+            if f.camera_deg is None:
+                print(f"  {f.path}: no camera direction in the EXIF, skipped")
+            elif f.direction_ref == "M" and args.declination == 0.0:
+                print(f"  {f.path}: heading is magnetic; pass --declination (about 4.6 over Israel)")
+        located = [f for f in fixes if f.lat is not None]
+        if args.lat is None and located:
+            args.lat, args.lon = located[0].lat, located[0].lon
+        from_photo = combine([f for f in fixes if f.facing_deg is not None])
+    if args.lat is None:
+        raise SystemExit("give --lat and --lon, or a photo whose EXIF carries a position")
+
     if args.along:
         if len(args.along) != 2:
             raise SystemExit("--along takes exactly two points along the cliff")
         value = aspect_from_line(args.lat, args.lon, args.along[0], args.along[1])
         print(f"{value:.0f} deg  (from the cliff line; expect about 15 deg of error)")
     elif args.saw:
-        fit = aspect_from_observations(args.lat, args.lon, args.tz, [parse_observation(s) for s in args.saw])
-        print(f"{fit.degrees:.0f} deg  (from {len(args.saw)} observation(s); "
+        fit = aspect_from_observations(args.lat, args.lon, args.tz,
+                                       [parse_observation(s) for s in args.saw], prior_deg=from_photo)
+        seed = "a photo heading" if from_photo is not None else "the terrain"
+        print(f"{fit.degrees:.0f} deg  (from {len(args.saw)} observation(s), seeded with {seed}; "
               f"directions within tolerance span {fit.spread_deg:.0f} deg)")
         if fit.spread_deg > 20:
             print("  add an observation from the opposite season to narrow this")
+    elif from_photo is not None:
+        print(f"{from_photo:.0f} deg  (from {len(args.photo)} photo(s); a phone compass is good to 10-20 deg)")
     else:
         print(f"{terrain_aspect(args.lat, args.lon):.0f} deg  (downhill direction only; expect 50 deg of error)")
     return 0
@@ -86,9 +106,13 @@ def main(argv: list[str] | None = None) -> int:
     t.set_defaults(func=_times)
 
     a = sub.add_parser("aspect", help="work out which way the wall faces")
-    a.add_argument("--lat", type=float, required=True)
-    a.add_argument("--lon", type=float, required=True)
+    a.add_argument("--lat", type=float, help="omit when a photo carries the position")
+    a.add_argument("--lon", type=float)
     a.add_argument("--tz", default="UTC", help="needed with --saw")
+    a.add_argument("--photo", action="append",
+                   help="image taken from the foot of the sector facing the rock; repeatable")
+    a.add_argument("--declination", type=float, default=0.0,
+                   help="magnetic declination to add when the EXIF heading is magnetic, east positive")
     a.add_argument("--along", type=_point, action="append",
                    help="lat,lon of a point along the cliff; give it twice")
     a.add_argument("--saw", action="append",
